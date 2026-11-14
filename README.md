@@ -88,7 +88,7 @@ warehouse to run the queries on.
 cortex plugin install PranavKatyayen/coco-token-meter
 ```
 
-This adds the `/tokens`, `/lean` and `/slim` commands and their skills. Not yet tested from GitHub; `cortex plugin validate` passes locally. Slash commands are not expanded in headless `-p` mode, where the skills answer instead. Restart CoCo or run `/plugin reload`.
+This adds the `/tokens`, `/lean` and `/slim` commands and their skills. Install and uninstall from GitHub were tested with CoCo CLI 1.2.45 on Windows. Slash commands are not expanded in headless `-p` mode, where the skills answer instead. Restart CoCo or run `/plugin reload`.
 
 ### 3. CoCo in Snowsight
 
