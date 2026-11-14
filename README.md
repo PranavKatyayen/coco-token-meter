@@ -126,7 +126,8 @@ SELECT * FROM COCO_TOKEN_METER.USAGE.MY_CHATS ORDER BY LAST_ACTIVITY_AT DESC;
 - A **chat** is one `THREAD_ID` in Snowflake's usage history.
 - A **request** is one billed call inside a chat. One message from you can
   produce several requests: in the CLI, every step CoCo takes (each tool call)
-  is its own request.
+  is its own request. In Snowsight, the two single-message chats we checked
+  were one request each, with all their steps added together.
 - **Cache write** tokens are context being stored in the model's prompt cache.
   **Cache read** tokens are that context being read back on a later request.
 - A **context reload** is a request that paid to write the chat's whole
@@ -247,9 +248,10 @@ no rate it prints tokens only.
 
 ## Limits
 
-- **Snowsight is not tested yet.** The skill files install into the workspace
-  and the views work from any SQL client, but nobody has yet confirmed the
-  skills inside the Snowsight CoCo panel.
+- **Snowsight was tested by hand, once.** On 2026-11-14 CoCo in Snowsight
+  loaded the `coco-token-usage` skill from the workspace and answered "show
+  my CoCo token usage per chat" and "where do my CoCo credits go" correctly.
+  The role in use needs `COCO_TOKEN_METER_USER` or `COCO_TOKEN_METER_ADMIN`.
 - **In Snowsight "this chat" is a best guess.** The skill uses your most
   recently active chat, because Snowsight gives the skill no thread id. In
   the CLI it is exact.
