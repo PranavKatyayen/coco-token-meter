@@ -1,0 +1,4 @@
+-- Removes everything setup.sql created. Run as the role that ran setup.sql.
+DROP DATABASE IF EXISTS COCO_TOKEN_METER;
+DROP ROLE IF EXISTS COCO_TOKEN_METER_ADMIN;
+DROP ROLE IF EXISTS COCO_TOKEN_METER_USER;

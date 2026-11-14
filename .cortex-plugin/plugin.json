@@ -1,0 +1,11 @@
+{
+  "name": "coco-token-meter",
+  "description": "Per-chat and per-message token and credit usage for Snowflake CoCo (Cortex Code)",
+  "version": "0.1.0",
+  "author": {
+    "name": "Pranav Katyayen",
+    "url": "https://github.com/PranavKatyayen"
+  },
+  "skills": ["./skills"],
+  "commands": ["./commands"]
+}
