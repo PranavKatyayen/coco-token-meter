@@ -220,20 +220,92 @@ powershell -ExecutionPolicy Bypass -File hooks\enable-windows.ps1
 
 Add `-Disable` to turn it off. It is opt-in because the hook is a PowerShell script and a failing hook prints an error on every message.
 
+## For admins
+
+Snowflake records CoCo usage per request, with a user and a thread id, but
+gives no per-chat view of it. With the `COCO_TOKEN_METER_ADMIN` role you get
+one:
+
+```sql
+-- Credits per user, and each user's most expensive chat
+SELECT USER_NAME, COUNT(*) AS CHATS, ROUND(SUM(CREDITS), 4) AS CREDITS,
+       ROUND(MAX(CREDITS), 4) AS MOST_EXPENSIVE_CHAT
+FROM COCO_TOKEN_METER.USAGE.CHATS
+GROUP BY USER_NAME ORDER BY CREDITS DESC;
+```
+
+In CoCo, ask "CoCo usage for all users" or "most expensive chat per user".
+
+### Chat names
+
+Snowflake's usage history has thread ids but no chat titles. Each user can
+add the titles of their own chats:
+
+```sql
+CALL COCO_TOKEN_METER.USAGE.SYNC_MY_CHAT_TITLES();
+```
+
+The skill runs this for you before it lists chats. It reads the user's own
+chats from Snowflake's Threads API and stores a name only for threads the
+usage history says belong to that user. Chat names say what a chat was about
+and admins can see them in `CHATS`; a user who never syncs shares none.
+
+### Cost in money
+
+```sql
+CALL COCO_TOKEN_METER.USAGE.SET_SETTING('CREDIT_PRICE', '3');
+```
+
+```sql
+CALL COCO_TOKEN_METER.USAGE.SET_SETTING('CURRENCY', 'USD');
+```
+
+Use the price you pay per credit. `CHATS`, `MY_CHATS` and `DAILY_USAGE` then
+show a `COST` column. Pass `NULL` to remove a setting.
+
+### Budget alerts (optional)
+
+```bash
+snow sql -c <connection> -f sql/alerts.sql
+```
+
+```sql
+CALL COCO_TOKEN_METER.USAGE.SET_SETTING('DAILY_USER_CREDIT_LIMIT', '5');
+```
+
+```sql
+CALL COCO_TOKEN_METER.USAGE.SET_SETTING('CHAT_CREDIT_LIMIT', '1');
+```
+
+```sql
+ALTER ALERT COCO_TOKEN_METER.USAGE.COCO_BUDGET_ALERT RESUME;
+```
+
+Every hour the alert writes each new breach (a user over the daily limit, or
+a chat over the chat limit) to `ALERT_LOG`. `BUDGET_BREACHES` shows what is
+over a limit right now. The alert is created suspended and is serverless, so
+it needs the `EXECUTE MANAGED ALERT` privilege. To also get an email, set
+`ALERT_EMAIL_INTEGRATION` to an email notification integration and
+`ALERT_EMAIL_TO` to the recipients. Email sending has not been tested.
+
 ## How it works
 
 | Object | What it is |
 |---|---|
 | `REQUESTS` | one row per request, with token and credit split |
 | `CHAT_REQUESTS` | requests inside chats, numbered, with running totals and idle time |
-| `CHATS` | one row per chat |
+| `CHATS` | one row per chat, with `CHAT_NAME` and `COST` when available |
 | `DAILY_USAGE` | per user, interface and day |
 | `BACKGROUND_USAGE` | requests with no thread id |
 | `MODEL_RATES` | credits per million tokens actually billed, by model and category |
+| `SETTINGS`, `CHAT_TITLES` | small tables behind `SET_SETTING` and `SYNC_MY_CHAT_TITLES` |
+| `BUDGET_BREACHES`, `ALERT_LOG`, `COCO_BUDGET_ALERT` | budget alerts, from `sql/alerts.sql` |
 | `MY_CHATS`, `MY_CHAT_REQUESTS`, `MY_DAILY_USAGE`, `MY_BACKGROUND_USAGE` | the same, limited to `CURRENT_USER()` |
 
-All of them are views over
-`SNOWFLAKE.ACCOUNT_USAGE.SNOWFLAKE_COCO_USAGE_HISTORY`. The `MY_*` views are
+The usage views all read
+`SNOWFLAKE.ACCOUNT_USAGE.SNOWFLAKE_COCO_USAGE_HISTORY`, once per query. On the
+test account (223 requests) each view answered in 3 to 7 seconds on an X-Small
+warehouse. Larger accounts have not been tested. The `MY_*` views are
 secure views owned by the installing role.
 
 `/tokens this` finds the open chat from the `CORTEX_THREAD_ID` environment
@@ -259,8 +331,9 @@ no rate it prints tokens only.
 - **The previous-chat hook is Windows only for now.** It is a PowerShell
   script. macOS and Linux have not been tested.
 - **Tested on Windows only**, with CoCo CLI 1.2.45.
-- **Chats have no titles in the views.** Snowflake's usage history has thread
-  ids but not chat names.
+- **Chat names depend on each user syncing them**, and use
+  `_snowflake.send_snow_api_request`, an interface Snowflake does not document
+  for this purpose. If it stops working, everything else still does.
 - **Not live to the second.** The views are as fresh as Snowflake's usage
   history. The newest requests of the open chat can be missing.
 - **Needs `SNOWFLAKE_COCO_USAGE_HISTORY`** in `SNOWFLAKE.ACCOUNT_USAGE`.

@@ -26,7 +26,11 @@ read `SNOWFLAKE.ACCOUNT_USAGE` directly: the views already do that.
   after the cache expired, whole chat written again), `large addition` (a lot
   of new content, usually a big tool result), otherwise `normal`.
 - Token columns: `TOTAL_TOKENS`, `INPUT_TOKENS`, `CACHE_READ_TOKENS`,
-  `CACHE_WRITE_TOKENS`, `OUTPUT_TOKENS`. Cost is `CREDITS`.
+  `CACHE_WRITE_TOKENS`, `OUTPUT_TOKENS`. Usage is billed in `CREDITS`.
+- `CHAT_NAME` is the chat's title. It is empty until the names have been
+  synced (see below). Show it next to the thread id whenever it is filled.
+- `COST` and `CURRENCY` are filled only when an admin has set a price per
+  credit. Show a cost column only when `COST` is not null.
 - `INTERFACE` says where the chat ran, for example `snowsight`, `cli` or
   `automation`.
 
@@ -54,12 +58,20 @@ ORDER BY LAST_ACTIVITY_AT DESC LIMIT 1;
 
 ## Queries
 
+**Chat names.** Before the first query that lists chats, run this once per
+chat. It stores the titles of the user's own chats. If it fails, carry on
+without names and do not mention it.
+
+```sql
+CALL COCO_TOKEN_METER.USAGE.SYNC_MY_CHAT_TITLES();
+```
+
 **Recent chats** (default when no chat is named):
 
 ```sql
-SELECT THREAD_ID, INTERFACE, STARTED_AT, LAST_ACTIVITY_AT, REQUESTS,
+SELECT THREAD_ID, CHAT_NAME, INTERFACE, STARTED_AT, LAST_ACTIVITY_AT, REQUESTS,
        TOTAL_TOKENS, INPUT_TOKENS, CACHE_READ_TOKENS, CACHE_WRITE_TOKENS,
-       OUTPUT_TOKENS, ROUND(CREDITS, 4) AS CREDITS
+       OUTPUT_TOKENS, ROUND(CREDITS, 4) AS CREDITS, COST, CURRENCY
 FROM COCO_TOKEN_METER.USAGE.MY_CHATS
 ORDER BY LAST_ACTIVITY_AT DESC
 LIMIT 20;
@@ -80,11 +92,32 @@ ORDER BY REQUEST_NO;
 **Most expensive chats:**
 
 ```sql
-SELECT THREAD_ID, INTERFACE, STARTED_AT, REQUESTS, TOTAL_TOKENS,
-       ROUND(CREDITS, 4) AS CREDITS
+SELECT THREAD_ID, CHAT_NAME, INTERFACE, STARTED_AT, REQUESTS, TOTAL_TOKENS,
+       ROUND(CREDITS, 4) AS CREDITS, COST, CURRENCY
 FROM COCO_TOKEN_METER.USAGE.MY_CHATS
 ORDER BY CREDITS DESC
 LIMIT 10;
+```
+
+**All users** (admins: "usage for all users", "who uses the most", "most
+expensive chat per user"). Needs `COCO_TOKEN_METER_ADMIN`. A chat has a name
+only if its owner has synced their names.
+
+```sql
+SELECT USER_NAME, COUNT(*) AS CHATS, SUM(REQUESTS) AS REQUESTS,
+       ROUND(SUM(CREDITS), 4) AS CREDITS, ROUND(MAX(CREDITS), 4) AS MOST_EXPENSIVE_CHAT,
+       SUM(COST) AS COST, MAX(CURRENCY) AS CURRENCY
+FROM COCO_TOKEN_METER.USAGE.CHATS
+GROUP BY USER_NAME
+ORDER BY CREDITS DESC;
+```
+
+```sql
+SELECT USER_NAME, THREAD_ID, CHAT_NAME, INTERFACE, STARTED_AT, REQUESTS,
+       ROUND(CREDITS, 4) AS CREDITS, COST, CURRENCY
+FROM COCO_TOKEN_METER.USAGE.CHATS
+QUALIFY ROW_NUMBER() OVER (PARTITION BY USER_NAME ORDER BY CREDITS DESC) <= 3
+ORDER BY USER_NAME, CREDITS DESC;
 ```
 
 **Usage outside any chat:**

@@ -16,106 +16,102 @@ CREATE SCHEMA IF NOT EXISTS COCO_TOKEN_METER.USAGE;
 USE SCHEMA COCO_TOKEN_METER.USAGE;
 
 -- ---------------------------------------------------------------------------
+-- SETTINGS: optional key/value settings, changed with SET_SETTING.
+--   CREDIT_PRICE      what you pay for one credit; turns credits into COST
+--   CURRENCY          label for COST, for example USD
+--   (sql/alerts.sql adds the budget settings)
+-- CHAT_TITLES: chat names, filled by SYNC_MY_CHAT_TITLES. Snowflake's usage
+-- history has thread ids only, so names are fetched per user on request.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS SETTINGS (
+  KEY        STRING NOT NULL,
+  VALUE      STRING,
+  UPDATED_AT TIMESTAMP_TZ DEFAULT CURRENT_TIMESTAMP(),
+  UPDATED_BY STRING
+);
+
+CREATE TABLE IF NOT EXISTS CHAT_TITLES (
+  THREAD_ID          NUMBER NOT NULL,
+  USER_NAME          STRING,
+  CHAT_NAME          STRING,
+  ORIGIN_APPLICATION STRING,
+  SYNCED_AT          TIMESTAMP_TZ DEFAULT CURRENT_TIMESTAMP()
+);
+
+-- ---------------------------------------------------------------------------
 -- REQUESTS: one row per CoCo request, all users. A request is one billed
 -- call; a single chat message can produce several of them.
 --
 -- TOKENS_GRANULAR and CREDITS_GRANULAR are {model: {input, cache_read_input,
 -- cache_write_input, output}}. A request can use more than one model, so the
--- split is summed over models.
+-- split is summed over models. The usage history is read once per query:
+-- every other view is built on this one.
 --
--- IS_LARGE_CACHE_WRITE marks a request with at least 10,000 cache-write
--- tokens that make up at least half of its credits. CHAT_REQUESTS turns it
--- into REQUEST_KIND.
--- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW REQUESTS
-  COMMENT = 'One row per CoCo request with token and credit split. All users.'
-AS
-WITH tok AS (
-  SELECT
-    r.REQUEST_ID,
-    SUM(COALESCE(m.value:input::NUMBER, 0))             AS INPUT_TOKENS,
-    SUM(COALESCE(m.value:cache_read_input::NUMBER, 0))  AS CACHE_READ_TOKENS,
-    SUM(COALESCE(m.value:cache_write_input::NUMBER, 0)) AS CACHE_WRITE_TOKENS,
-    SUM(COALESCE(m.value:output::NUMBER, 0))            AS OUTPUT_TOKENS,
-    ARRAY_AGG(DISTINCT m.key::STRING) WITHIN GROUP (ORDER BY m.key::STRING) AS MODELS
-  FROM SNOWFLAKE.ACCOUNT_USAGE.SNOWFLAKE_COCO_USAGE_HISTORY r,
-       LATERAL FLATTEN(INPUT => r.TOKENS_GRANULAR) m
-  GROUP BY r.REQUEST_ID
-),
-cred AS (
-  SELECT
-    r.REQUEST_ID,
-    SUM(COALESCE(m.value:input::NUMBER(38,9), 0))             AS INPUT_CREDITS,
-    SUM(COALESCE(m.value:cache_read_input::NUMBER(38,9), 0))  AS CACHE_READ_CREDITS,
-    SUM(COALESCE(m.value:cache_write_input::NUMBER(38,9), 0)) AS CACHE_WRITE_CREDITS,
-    SUM(COALESCE(m.value:output::NUMBER(38,9), 0))            AS OUTPUT_CREDITS
-  FROM SNOWFLAKE.ACCOUNT_USAGE.SNOWFLAKE_COCO_USAGE_HISTORY r,
-       LATERAL FLATTEN(INPUT => r.CREDITS_GRANULAR) m
-  GROUP BY r.REQUEST_ID
-)
-SELECT
-  u.THREAD_ID,
-  u.REQUEST_ID,
-  u.PARENT_REQUEST_ID,
-  u.USER_NAME,
-  u.INTERFACE,
-  u.USAGE_TIME,
-  u.TOKENS                              AS TOTAL_TOKENS,
-  COALESCE(t.INPUT_TOKENS, 0)           AS INPUT_TOKENS,
-  COALESCE(t.CACHE_READ_TOKENS, 0)      AS CACHE_READ_TOKENS,
-  COALESCE(t.CACHE_WRITE_TOKENS, 0)     AS CACHE_WRITE_TOKENS,
-  COALESCE(t.OUTPUT_TOKENS, 0)          AS OUTPUT_TOKENS,
-  u.TOKEN_CREDITS                       AS CREDITS,
-  COALESCE(c.INPUT_CREDITS, 0)          AS INPUT_CREDITS,
-  COALESCE(c.CACHE_READ_CREDITS, 0)     AS CACHE_READ_CREDITS,
-  COALESCE(c.CACHE_WRITE_CREDITS, 0)    AS CACHE_WRITE_CREDITS,
-  COALESCE(c.OUTPUT_CREDITS, 0)         AS OUTPUT_CREDITS,
-  (COALESCE(t.CACHE_WRITE_TOKENS, 0) >= 10000
-     AND COALESCE(c.CACHE_WRITE_CREDITS, 0) >= 0.5 * u.TOKEN_CREDITS) AS IS_LARGE_CACHE_WRITE,
-  COALESCE(t.MODELS, ARRAY_CONSTRUCT()) AS MODELS,
-  u.METADATA:role_name::STRING          AS ROLE_NAME,
-  u.METADATA:trigger_type::STRING       AS TRIGGER_TYPE
-FROM SNOWFLAKE.ACCOUNT_USAGE.SNOWFLAKE_COCO_USAGE_HISTORY u
-LEFT JOIN tok  t ON t.REQUEST_ID = u.REQUEST_ID
-LEFT JOIN cred c ON c.REQUEST_ID = u.REQUEST_ID;
-
--- ---------------------------------------------------------------------------
--- CHAT_REQUESTS: every request that belongs to a chat, numbered in order,
--- with running totals, the idle time before it, and REQUEST_KIND. Requests
--- with no THREAD_ID belong to no chat and are reported in BACKGROUND_USAGE.
---
--- REQUEST_KIND explains requests that paid for a large cache write (at least
--- 10,000 cache-write tokens making up at least half of the request's
--- credits):
+-- For requests that belong to a chat (THREAD_ID is not null) the view also
+-- numbers them, gives the idle time before each one, running totals, and
+-- REQUEST_KIND, which explains requests that paid for a large cache write
+-- (at least 10,000 cache-write tokens making up at least half of the
+-- request's credits):
 --   'cold start'     first request of a chat: the starting context was
 --                    written to the prompt cache
 --   'idle reload'    later request after 2+ minutes idle: the cache had
 --                    expired and the chat so far was written again
 --   'large addition' later request with no idle gap: a lot of new content
 --                    (usually a big tool result) was added to the chat
---   'normal'         everything else
+--   'normal'         everything else in a chat
+--   'background'     requests with no THREAD_ID; they belong to no chat
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW CHAT_REQUESTS
-  COMMENT = 'One row per request inside a chat, with running totals and REQUEST_KIND. All users.'
+CREATE OR REPLACE VIEW REQUESTS
+  COMMENT = 'One row per CoCo request with token and credit split and REQUEST_KIND. All users.'
 AS
-WITH numbered AS (
+WITH split AS (
   SELECT
-    r.*,
-    ROW_NUMBER() OVER (PARTITION BY THREAD_ID ORDER BY USAGE_TIME, REQUEST_ID) AS REQUEST_NO,
-    DATEDIFF('second',
-             LAG(USAGE_TIME) OVER (PARTITION BY THREAD_ID ORDER BY USAGE_TIME, REQUEST_ID),
-             USAGE_TIME)                                                       AS SECONDS_SINCE_PREVIOUS,
-    SUM(TOTAL_TOKENS) OVER (PARTITION BY THREAD_ID ORDER BY USAGE_TIME, REQUEST_ID
-                            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS RUNNING_TOKENS,
-    SUM(CREDITS)      OVER (PARTITION BY THREAD_ID ORDER BY USAGE_TIME, REQUEST_ID
-                            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS RUNNING_CREDITS
-  FROM REQUESTS r
-  WHERE THREAD_ID IS NOT NULL
+    u.REQUEST_ID,
+    ANY_VALUE(u.THREAD_ID)                              AS THREAD_ID,
+    ANY_VALUE(u.PARENT_REQUEST_ID)                      AS PARENT_REQUEST_ID,
+    ANY_VALUE(u.USER_NAME)                              AS USER_NAME,
+    ANY_VALUE(u.INTERFACE)                              AS INTERFACE,
+    ANY_VALUE(u.USAGE_TIME)                             AS USAGE_TIME,
+    ANY_VALUE(u.TOKENS)                                 AS TOTAL_TOKENS,
+    ANY_VALUE(u.TOKEN_CREDITS)                          AS CREDITS,
+    ANY_VALUE(u.METADATA:role_name::STRING)             AS ROLE_NAME,
+    ANY_VALUE(u.METADATA:trigger_type::STRING)          AS TRIGGER_TYPE,
+    SUM(COALESCE(m.value:input::NUMBER, 0))             AS INPUT_TOKENS,
+    SUM(COALESCE(m.value:cache_read_input::NUMBER, 0))  AS CACHE_READ_TOKENS,
+    SUM(COALESCE(m.value:cache_write_input::NUMBER, 0)) AS CACHE_WRITE_TOKENS,
+    SUM(COALESCE(m.value:output::NUMBER, 0))            AS OUTPUT_TOKENS,
+    SUM(COALESCE(u.CREDITS_GRANULAR[m.key]:input::NUMBER(38,9), 0))             AS INPUT_CREDITS,
+    SUM(COALESCE(u.CREDITS_GRANULAR[m.key]:cache_read_input::NUMBER(38,9), 0))  AS CACHE_READ_CREDITS,
+    SUM(COALESCE(u.CREDITS_GRANULAR[m.key]:cache_write_input::NUMBER(38,9), 0)) AS CACHE_WRITE_CREDITS,
+    SUM(COALESCE(u.CREDITS_GRANULAR[m.key]:output::NUMBER(38,9), 0))            AS OUTPUT_CREDITS,
+    ARRAY_AGG(DISTINCT m.key::STRING) WITHIN GROUP (ORDER BY m.key::STRING)     AS MODELS
+  FROM SNOWFLAKE.ACCOUNT_USAGE.SNOWFLAKE_COCO_USAGE_HISTORY u,
+       LATERAL FLATTEN(INPUT => u.TOKENS_GRANULAR, OUTER => TRUE) m
+  GROUP BY u.REQUEST_ID
+),
+numbered AS (
+  SELECT
+    s.*,
+    IFF(THREAD_ID IS NULL, NULL,
+        ROW_NUMBER() OVER (PARTITION BY THREAD_ID ORDER BY USAGE_TIME, REQUEST_ID)) AS REQUEST_NO,
+    IFF(THREAD_ID IS NULL, NULL,
+        DATEDIFF('second',
+                 LAG(USAGE_TIME) OVER (PARTITION BY THREAD_ID ORDER BY USAGE_TIME, REQUEST_ID),
+                 USAGE_TIME))                                                       AS SECONDS_SINCE_PREVIOUS,
+    IFF(THREAD_ID IS NULL, NULL,
+        SUM(TOTAL_TOKENS) OVER (PARTITION BY THREAD_ID ORDER BY USAGE_TIME, REQUEST_ID
+                                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)) AS RUNNING_TOKENS,
+    IFF(THREAD_ID IS NULL, NULL,
+        SUM(CREDITS)      OVER (PARTITION BY THREAD_ID ORDER BY USAGE_TIME, REQUEST_ID
+                                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)) AS RUNNING_CREDITS,
+    (CACHE_WRITE_TOKENS >= 10000 AND CACHE_WRITE_CREDITS >= 0.5 * CREDITS)         AS IS_LARGE_CACHE_WRITE
+  FROM split s
 )
 SELECT
   THREAD_ID,
   REQUEST_NO,
   REQUEST_ID,
+  PARENT_REQUEST_ID,
   USER_NAME,
   INTERFACE,
   USAGE_TIME,
@@ -131,9 +127,10 @@ SELECT
   CACHE_WRITE_CREDITS,
   OUTPUT_CREDITS,
   CASE
-    WHEN NOT IS_LARGE_CACHE_WRITE          THEN 'normal'
-    WHEN REQUEST_NO = 1                    THEN 'cold start'
-    WHEN SECONDS_SINCE_PREVIOUS >= 120     THEN 'idle reload'
+    WHEN THREAD_ID IS NULL             THEN 'background'
+    WHEN NOT IS_LARGE_CACHE_WRITE      THEN 'normal'
+    WHEN REQUEST_NO = 1                THEN 'cold start'
+    WHEN SECONDS_SINCE_PREVIOUS >= 120 THEN 'idle reload'
     ELSE 'large addition'
   END AS REQUEST_KIND,
   RUNNING_TOKENS,
@@ -144,37 +141,62 @@ SELECT
 FROM numbered;
 
 -- ---------------------------------------------------------------------------
+-- CHAT_REQUESTS: the requests that belong to a chat.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE VIEW CHAT_REQUESTS
+  COMMENT = 'One row per request inside a chat, with running totals and REQUEST_KIND. All users.'
+AS
+SELECT * EXCLUDE (PARENT_REQUEST_ID)
+FROM REQUESTS
+WHERE THREAD_ID IS NOT NULL;
+-- ---------------------------------------------------------------------------
 -- CHATS: one row per chat (THREAD_ID).
+-- CHAT_NAME is filled once the chat's owner has run SYNC_MY_CHAT_TITLES.
+-- COST is CREDITS x the CREDIT_PRICE setting, or NULL when no price is set.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE VIEW CHATS
-  COMMENT = 'One row per CoCo chat (THREAD_ID) with token and credit totals. All users.'
+  COMMENT = 'One row per CoCo chat (THREAD_ID) with token, credit and cost totals. All users.'
 AS
+WITH agg AS (
+  SELECT
+    THREAD_ID,
+    MIN(USER_NAME)           AS USER_NAME,
+    MIN(INTERFACE)           AS INTERFACE,
+    MIN(USAGE_TIME)          AS STARTED_AT,
+    MAX(USAGE_TIME)          AS LAST_ACTIVITY_AT,
+    COUNT(*)                 AS REQUESTS,
+    SUM(TOTAL_TOKENS)        AS TOTAL_TOKENS,
+    SUM(INPUT_TOKENS)        AS INPUT_TOKENS,
+    SUM(CACHE_READ_TOKENS)   AS CACHE_READ_TOKENS,
+    SUM(CACHE_WRITE_TOKENS)  AS CACHE_WRITE_TOKENS,
+    SUM(OUTPUT_TOKENS)       AS OUTPUT_TOKENS,
+    SUM(CREDITS)             AS CREDITS,
+    SUM(INPUT_CREDITS)       AS INPUT_CREDITS,
+    SUM(CACHE_READ_CREDITS)  AS CACHE_READ_CREDITS,
+    SUM(CACHE_WRITE_CREDITS) AS CACHE_WRITE_CREDITS,
+    SUM(OUTPUT_CREDITS)      AS OUTPUT_CREDITS,
+    SUM(IFF(REQUEST_KIND = 'cold start', CACHE_WRITE_CREDITS, 0))     AS COLD_START_CREDITS,
+    COUNT_IF(REQUEST_KIND = 'idle reload')                            AS IDLE_RELOADS,
+    SUM(IFF(REQUEST_KIND = 'idle reload', CACHE_WRITE_CREDITS, 0))    AS IDLE_RELOAD_CREDITS,
+    COUNT_IF(REQUEST_KIND = 'large addition')                         AS LARGE_ADDITIONS,
+    SUM(IFF(REQUEST_KIND = 'large addition', CACHE_WRITE_CREDITS, 0)) AS LARGE_ADDITION_CREDITS,
+    MAX(TOTAL_TOKENS)        AS LARGEST_REQUEST_TOKENS
+  FROM CHAT_REQUESTS
+  GROUP BY THREAD_ID
+),
+titles AS (
+  SELECT THREAD_ID, CHAT_NAME
+  FROM CHAT_TITLES
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY THREAD_ID ORDER BY SYNCED_AT DESC) = 1
+)
 SELECT
-  THREAD_ID,
-  MIN(USER_NAME)           AS USER_NAME,
-  MIN(INTERFACE)           AS INTERFACE,
-  MIN(USAGE_TIME)          AS STARTED_AT,
-  MAX(USAGE_TIME)          AS LAST_ACTIVITY_AT,
-  COUNT(*)                 AS REQUESTS,
-  SUM(TOTAL_TOKENS)        AS TOTAL_TOKENS,
-  SUM(INPUT_TOKENS)        AS INPUT_TOKENS,
-  SUM(CACHE_READ_TOKENS)   AS CACHE_READ_TOKENS,
-  SUM(CACHE_WRITE_TOKENS)  AS CACHE_WRITE_TOKENS,
-  SUM(OUTPUT_TOKENS)       AS OUTPUT_TOKENS,
-  SUM(CREDITS)             AS CREDITS,
-  SUM(INPUT_CREDITS)       AS INPUT_CREDITS,
-  SUM(CACHE_READ_CREDITS)  AS CACHE_READ_CREDITS,
-  SUM(CACHE_WRITE_CREDITS) AS CACHE_WRITE_CREDITS,
-  SUM(OUTPUT_CREDITS)      AS OUTPUT_CREDITS,
-  SUM(IFF(REQUEST_KIND = 'cold start', CACHE_WRITE_CREDITS, 0))     AS COLD_START_CREDITS,
-  COUNT_IF(REQUEST_KIND = 'idle reload')                            AS IDLE_RELOADS,
-  SUM(IFF(REQUEST_KIND = 'idle reload', CACHE_WRITE_CREDITS, 0))    AS IDLE_RELOAD_CREDITS,
-  COUNT_IF(REQUEST_KIND = 'large addition')                         AS LARGE_ADDITIONS,
-  SUM(IFF(REQUEST_KIND = 'large addition', CACHE_WRITE_CREDITS, 0)) AS LARGE_ADDITION_CREDITS,
-  MAX(TOTAL_TOKENS)        AS LARGEST_REQUEST_TOKENS
-FROM CHAT_REQUESTS
-GROUP BY THREAD_ID;
-
+  a.THREAD_ID,
+  t.CHAT_NAME,
+  a.* EXCLUDE (THREAD_ID),
+  ROUND(a.CREDITS * (SELECT TRY_TO_DOUBLE(MAX(VALUE)) FROM SETTINGS WHERE KEY = 'CREDIT_PRICE'), 4) AS COST,
+  (SELECT MAX(VALUE) FROM SETTINGS WHERE KEY = 'CURRENCY')                                         AS CURRENCY
+FROM agg a
+LEFT JOIN titles t ON t.THREAD_ID = a.THREAD_ID;
 -- ---------------------------------------------------------------------------
 -- BACKGROUND_USAGE: requests CoCo bills that carry no THREAD_ID, per user,
 -- interface and day. They cannot be attributed to a chat.
@@ -201,25 +223,25 @@ CREATE OR REPLACE VIEW DAILY_USAGE
   COMMENT = 'CoCo usage per user, interface and day with credit split. All users.'
 AS
 SELECT
-  r.USER_NAME,
-  r.INTERFACE,
-  r.USAGE_TIME::DATE           AS USAGE_DATE,
-  COUNT(DISTINCT r.THREAD_ID)  AS CHATS,
-  COUNT(*)                     AS REQUESTS,
-  SUM(r.TOTAL_TOKENS)          AS TOTAL_TOKENS,
-  SUM(r.CREDITS)               AS CREDITS,
-  SUM(r.INPUT_CREDITS)         AS INPUT_CREDITS,
-  SUM(r.CACHE_READ_CREDITS)    AS CACHE_READ_CREDITS,
-  SUM(r.CACHE_WRITE_CREDITS)   AS CACHE_WRITE_CREDITS,
-  SUM(r.OUTPUT_CREDITS)        AS OUTPUT_CREDITS,
-  COUNT_IF(c.REQUEST_KIND = 'cold start')                             AS COLD_STARTS,
-  SUM(IFF(c.REQUEST_KIND = 'cold start', r.CACHE_WRITE_CREDITS, 0))   AS COLD_START_CREDITS,
-  COUNT_IF(c.REQUEST_KIND = 'idle reload')                            AS IDLE_RELOADS,
-  SUM(IFF(c.REQUEST_KIND = 'idle reload', r.CACHE_WRITE_CREDITS, 0))  AS IDLE_RELOAD_CREDITS
-FROM REQUESTS r
-LEFT JOIN CHAT_REQUESTS c ON c.REQUEST_ID = r.REQUEST_ID
-GROUP BY r.USER_NAME, r.INTERFACE, r.USAGE_TIME::DATE;
-
+  USER_NAME,
+  INTERFACE,
+  USAGE_TIME::DATE           AS USAGE_DATE,
+  COUNT(DISTINCT THREAD_ID)  AS CHATS,
+  COUNT(*)                   AS REQUESTS,
+  SUM(TOTAL_TOKENS)          AS TOTAL_TOKENS,
+  SUM(CREDITS)               AS CREDITS,
+  SUM(INPUT_CREDITS)         AS INPUT_CREDITS,
+  SUM(CACHE_READ_CREDITS)    AS CACHE_READ_CREDITS,
+  SUM(CACHE_WRITE_CREDITS)   AS CACHE_WRITE_CREDITS,
+  SUM(OUTPUT_CREDITS)        AS OUTPUT_CREDITS,
+  COUNT_IF(REQUEST_KIND = 'cold start')                           AS COLD_STARTS,
+  SUM(IFF(REQUEST_KIND = 'cold start', CACHE_WRITE_CREDITS, 0))   AS COLD_START_CREDITS,
+  COUNT_IF(REQUEST_KIND = 'idle reload')                          AS IDLE_RELOADS,
+  SUM(IFF(REQUEST_KIND = 'idle reload', CACHE_WRITE_CREDITS, 0))  AS IDLE_RELOAD_CREDITS,
+  ROUND(SUM(CREDITS) * (SELECT TRY_TO_DOUBLE(MAX(VALUE)) FROM SETTINGS WHERE KEY = 'CREDIT_PRICE'), 4) AS COST,
+  (SELECT MAX(VALUE) FROM SETTINGS WHERE KEY = 'CURRENCY')        AS CURRENCY
+FROM REQUESTS
+GROUP BY USER_NAME, INTERFACE, USAGE_TIME::DATE;
 -- ---------------------------------------------------------------------------
 -- MODEL_RATES: credits per million tokens for each model and token category,
 -- computed from what this account was actually billed. No per-user data.
@@ -268,6 +290,105 @@ AS
 SELECT * FROM DAILY_USAGE WHERE USER_NAME = CURRENT_USER();
 
 -- ---------------------------------------------------------------------------
+-- SET_SETTING: change a setting. Admins only.
+--   CALL SET_SETTING('CREDIT_PRICE', '3');   CALL SET_SETTING('CURRENCY', 'USD');
+--   CALL SET_SETTING('CREDIT_PRICE', NULL);  -- remove it again
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE PROCEDURE SET_SETTING(SETTING_KEY STRING, SETTING_VALUE STRING)
+  RETURNS STRING
+  LANGUAGE SQL
+  EXECUTE AS OWNER
+AS
+$$
+BEGIN
+  IF (UPPER(SETTING_KEY) NOT IN ('CREDIT_PRICE', 'CURRENCY', 'DAILY_USER_CREDIT_LIMIT',
+                                 'CHAT_CREDIT_LIMIT', 'ALERT_EMAIL_INTEGRATION', 'ALERT_EMAIL_TO')) THEN
+    RETURN 'Unknown setting: ' || SETTING_KEY;
+  END IF;
+  IF (UPPER(SETTING_KEY) IN ('CREDIT_PRICE', 'DAILY_USER_CREDIT_LIMIT', 'CHAT_CREDIT_LIMIT')
+      AND SETTING_VALUE IS NOT NULL AND TRY_TO_DOUBLE(SETTING_VALUE) IS NULL) THEN
+    RETURN SETTING_KEY || ' must be a number.';
+  END IF;
+  DELETE FROM COCO_TOKEN_METER.USAGE.SETTINGS WHERE KEY = UPPER(:SETTING_KEY);
+  IF (SETTING_VALUE IS NOT NULL) THEN
+    INSERT INTO COCO_TOKEN_METER.USAGE.SETTINGS (KEY, VALUE, UPDATED_BY)
+      VALUES (UPPER(:SETTING_KEY), :SETTING_VALUE, CURRENT_USER());
+    RETURN UPPER(SETTING_KEY) || ' set to ' || SETTING_VALUE;
+  END IF;
+  RETURN UPPER(SETTING_KEY) || ' removed';
+END;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Chat names. SYNC_MY_CHAT_TITLES runs as the caller, asks Snowflake's Threads
+-- API for the caller's own chats, and hands them to STORE_MY_CHAT_TITLES,
+-- which keeps a name only for a thread that the usage history says belongs
+-- to the calling user. A user cannot name somebody else's chat.
+-- Chat names describe what a chat was about, and admins can see them in
+-- CHATS. A user who never calls SYNC_MY_CHAT_TITLES shares no names.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE PROCEDURE STORE_MY_CHAT_TITLES(THREADS VARIANT)
+  RETURNS NUMBER
+  LANGUAGE SQL
+  EXECUTE AS OWNER
+AS
+$$
+DECLARE
+  STORED NUMBER DEFAULT 0;
+BEGIN
+  MERGE INTO COCO_TOKEN_METER.USAGE.CHAT_TITLES tgt
+  USING (
+    SELECT DISTINCT
+      f.value:thread_id::NUMBER          AS THREAD_ID,
+      f.value:thread_name::STRING        AS CHAT_NAME,
+      f.value:origin_application::STRING AS ORIGIN_APPLICATION
+    FROM TABLE(FLATTEN(INPUT => :THREADS)) f
+    WHERE f.value:thread_name::STRING IS NOT NULL
+      AND f.value:thread_id::NUMBER IN (
+        SELECT THREAD_ID
+        FROM SNOWFLAKE.ACCOUNT_USAGE.SNOWFLAKE_COCO_USAGE_HISTORY
+        WHERE USER_NAME = CURRENT_USER() AND THREAD_ID IS NOT NULL)
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY f.value:thread_id::NUMBER ORDER BY f.index) = 1
+  ) src
+  ON tgt.THREAD_ID = src.THREAD_ID
+  WHEN MATCHED THEN UPDATE SET
+    CHAT_NAME = src.CHAT_NAME, ORIGIN_APPLICATION = src.ORIGIN_APPLICATION,
+    USER_NAME = CURRENT_USER(), SYNCED_AT = CURRENT_TIMESTAMP()
+  WHEN NOT MATCHED THEN INSERT (THREAD_ID, USER_NAME, CHAT_NAME, ORIGIN_APPLICATION)
+    VALUES (src.THREAD_ID, CURRENT_USER(), src.CHAT_NAME, src.ORIGIN_APPLICATION);
+  STORED := SQLROWCOUNT;
+  RETURN STORED;
+END;
+$$;
+
+CREATE OR REPLACE PROCEDURE SYNC_MY_CHAT_TITLES()
+  RETURNS STRING
+  LANGUAGE PYTHON
+  RUNTIME_VERSION = '3.11'
+  PACKAGES = ('snowflake-snowpark-python')
+  HANDLER = 'run'
+  EXECUTE AS CALLER
+AS
+$$
+import json
+import _snowflake
+
+def run(session):
+    response = _snowflake.send_snow_api_request(
+        "GET", "/api/v2/cortex/threads", {}, {}, {}, None, 30000)
+    if response.get("status") != 200:
+        return "Could not read chat names (status %s)." % response.get("status")
+    threads = json.loads(response.get("content") or "[]")
+    slim = [{"thread_id": t.get("thread_id"),
+             "thread_name": t.get("thread_name"),
+             "origin_application": t.get("origin_application")}
+            for t in threads if t.get("thread_name")]
+    if not slim:
+        return "No named chats found."
+    stored = session.call("COCO_TOKEN_METER.USAGE.STORE_MY_CHAT_TITLES", slim)
+    return "Chat names stored or refreshed: %s" % stored
+$$;
+-- ---------------------------------------------------------------------------
 -- Access. COCO_TOKEN_METER_USER sees only their own usage;
 -- COCO_TOKEN_METER_ADMIN sees every user's usage.
 -- To let everyone see their own usage:
@@ -292,5 +413,11 @@ GRANT SELECT ON VIEW CHAT_REQUESTS    TO ROLE COCO_TOKEN_METER_ADMIN;
 GRANT SELECT ON VIEW CHATS            TO ROLE COCO_TOKEN_METER_ADMIN;
 GRANT SELECT ON VIEW BACKGROUND_USAGE TO ROLE COCO_TOKEN_METER_ADMIN;
 GRANT SELECT ON VIEW DAILY_USAGE      TO ROLE COCO_TOKEN_METER_ADMIN;
+
+GRANT USAGE ON PROCEDURE SYNC_MY_CHAT_TITLES()          TO ROLE COCO_TOKEN_METER_USER;
+GRANT USAGE ON PROCEDURE STORE_MY_CHAT_TITLES(VARIANT)   TO ROLE COCO_TOKEN_METER_USER;
+GRANT USAGE ON PROCEDURE SET_SETTING(STRING, STRING)     TO ROLE COCO_TOKEN_METER_ADMIN;
+GRANT SELECT ON TABLE SETTINGS                           TO ROLE COCO_TOKEN_METER_ADMIN;
+GRANT SELECT ON TABLE CHAT_TITLES                        TO ROLE COCO_TOKEN_METER_ADMIN;
 
 GRANT ROLE COCO_TOKEN_METER_ADMIN TO ROLE SYSADMIN;
