@@ -36,10 +36,15 @@ account. If an all-users view fails with a privilege error, say it needs the
 
 ## Finding "this chat"
 
-1. If you can run shell commands, read the environment variable
-   `CORTEX_THREAD_ID` (`echo $CORTEX_THREAD_ID`, or `echo $env:CORTEX_THREAD_ID`
-   in PowerShell). CoCo CLI sets it to the thread id of the open chat. Use it.
-2. Otherwise (for example in Snowsight) use the user's most recently active
+1. Run a shell command to read the environment variable `CORTEX_THREAD_ID`
+   (`echo $CORTEX_THREAD_ID`, or `echo $env:CORTEX_THREAD_ID` in PowerShell).
+   CoCo sets it to the thread id of the open chat, in the CLI and in
+   Snowsight. Use it.
+2. If that chat has no rows yet, say so: a request is recorded only after it
+   finishes, so the first message of a new chat is never there. Tell the user
+   to ask again after their next message, and do not show another chat's
+   numbers as if they were this chat's.
+3. Only if you cannot run shell commands, use the user's most recently active
    chat, and say that this is what you did:
 
 ```sql

@@ -236,8 +236,8 @@ All of them are views over
 `SNOWFLAKE.ACCOUNT_USAGE.SNOWFLAKE_COCO_USAGE_HISTORY`. The `MY_*` views are
 secure views owned by the installing role.
 
-In the CLI, `/tokens this` finds the open chat from the `CORTEX_THREAD_ID`
-environment variable that CoCo sets for shell commands.
+`/tokens this` finds the open chat from the `CORTEX_THREAD_ID` environment
+variable that CoCo sets for shell commands, in the CLI and in Snowsight.
 
 The previous-chat hook runs on the first message of a chat. It reads the
 token counters CoCo CLI keeps in `~/.snowflake/cortex/stats/usage.json`,
@@ -252,9 +252,10 @@ no rate it prints tokens only.
   loaded the `coco-token-usage` skill from the workspace and answered "show
   my CoCo token usage per chat" and "where do my CoCo credits go" correctly.
   The role in use needs `COCO_TOKEN_METER_USER` or `COCO_TOKEN_METER_ADMIN`.
-- **In Snowsight "this chat" is a best guess.** The skill uses your most
-  recently active chat, because Snowsight gives the skill no thread id. In
-  the CLI it is exact.
+- **"This chat" shows nothing on the first message of a chat.** A request is
+  recorded after it finishes, so a brand-new chat is not in the usage history
+  yet. From the second message on it works, in the CLI and in Snowsight
+  (both expose the thread id to shell commands; seen on 2026-11-14).
 - **The previous-chat hook is Windows only for now.** It is a PowerShell
   script. macOS and Linux have not been tested.
 - **Tested on Windows only**, with CoCo CLI 1.2.45.
