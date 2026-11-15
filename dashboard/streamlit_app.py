@@ -76,7 +76,6 @@ CSS = """
   background-size: 44px 44px;
   -webkit-mask-image: radial-gradient(ellipse at 50% 0%, #000 0%, transparent 75%);
           mask-image: radial-gradient(ellipse at 50% 0%, #000 0%, transparent 75%);
-  animation: ctm-drift 40s linear infinite;
 }
 [data-testid="stHeader"] { background: transparent !important; }
 .block-container { padding-top: 1.6rem; max-width: 1500px; position: relative; z-index: 1; }
@@ -113,7 +112,6 @@ CSS = """
   font-size: 44px; line-height: 1.05; font-weight: 700; margin: 10px 0 6px;
   background: linear-gradient(92deg, #ffffff 0%, #a5f3fc 38%, #c4b5fd 72%, #f9a8d4 100%);
   -webkit-background-clip: text; background-clip: text; color: transparent !important;
-  background-size: 200% 100%; animation: ctm-sheen 9s ease-in-out infinite;
 }
 .ctm-sub { color: var(--ctm-muted) !important; font-size: 15px; max-width: 880px; }
 .ctm-insight {
@@ -156,10 +154,12 @@ CSS = """
 .ctm-note { margin-top: 6px; font-size: 12.5px; color: var(--ctm-muted) !important; min-height: 18px; }
 .ctm-bar { margin-top: 12px; height: 4px; border-radius: 4px; background: rgba(255, 255, 255, 0.07); overflow: hidden; }
 .ctm-bar > i {
-  display: block; height: 100%; border-radius: 4px; width: var(--w, 0%);
+  display: block; height: 100%; border-radius: 4px; transform-origin: left center;
   background: linear-gradient(90deg, var(--accent, var(--ctm-cyan)), #ffffff);
-  animation: ctm-grow 1.3s cubic-bezier(.2,.8,.2,1) both;
+  animation: ctm-grow 1.1s cubic-bezier(.2,.8,.2,1) both;
 }
+.acc-cyan { --accent: #22d3ee; } .acc-violet { --accent: #8b5cf6; } .acc-pink { --accent: #f472b6; }
+.acc-amber { --accent: #fbbf24; } .acc-green { --accent: #34d399; } .acc-blue { --accent: #60a5fa; }
 
 /* section titles and panels */
 .ctm-h {
@@ -188,12 +188,12 @@ CSS = """
 .ctm-table td.dim { color: var(--ctm-muted) !important; }
 .ctm-chip {
   display: inline-block; padding: 2px 9px; border-radius: 999px; font-family: var(--ctm-mono); font-size: 11px;
-  border: 1px solid var(--chip, var(--ctm-cyan)); color: var(--chip, var(--ctm-cyan)) !important;
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid currentColor; color: var(--ctm-cyan); background: rgba(255, 255, 255, 0.03);
+  white-space: nowrap;
 }
 .ctm-meter { display: inline-block; vertical-align: middle; width: 90px; height: 5px; border-radius: 5px;
   background: rgba(255, 255, 255, 0.07); margin-left: 10px; overflow: hidden; }
-.ctm-meter > i { display: block; height: 100%; width: var(--w, 0%);
+.ctm-meter > i { display: block; height: 100%;
   background: linear-gradient(90deg, var(--ctm-violet), var(--ctm-cyan)); }
 
 /* tabs as pills */
@@ -211,28 +211,92 @@ CSS = """
 }
 [data-baseweb="tab-highlight"], [data-baseweb="tab-border"] { display: none !important; }
 
+/* navigation pills (a horizontal radio, so only the chosen view is drawn) */
+.block-container [role="radiogroup"] { gap: 8px; flex-wrap: wrap; margin: 12px 0 2px; }
+.block-container [role="radiogroup"] > label {
+  border-radius: 999px; padding: 8px 18px; margin: 0; cursor: pointer;
+  border: 1px solid var(--ctm-line); background: rgba(255, 255, 255, 0.02); transition: all .2s ease;
+}
+.block-container [role="radiogroup"] > label > div:first-child { display: none; }
+.block-container [role="radiogroup"] > label p {
+  font-family: var(--ctm-mono); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
+}
+.block-container [role="radiogroup"] > label:hover { border-color: var(--ctm-cyan); }
+.block-container [role="radiogroup"] > label:has(input:checked) {
+  background: linear-gradient(90deg, rgba(34, 211, 238, 0.20), rgba(139, 92, 246, 0.20));
+  border-color: var(--ctm-cyan); box-shadow: 0 0 22px -8px var(--ctm-cyan);
+}
+
+/* sidebar */
+[data-testid="stSidebar"] > div:first-child { padding-top: 0.6rem; }
+.ctm-brand { display: flex; align-items: center; gap: 12px; padding: 4px 0 14px; }
+.ctm-brand-mark {
+  width: 40px; height: 40px; border-radius: 12px; flex: none; position: relative;
+  background: conic-gradient(from 210deg, #22d3ee, #8b5cf6, #f472b6, #22d3ee);
+  box-shadow: 0 0 26px -6px #22d3ee; animation: ctm-rise .7s ease both;
+}
+.ctm-brand-mark::after { content: ""; position: absolute; inset: 3px; border-radius: 9px; background: #070a18; }
+.ctm-brand-mark::before {
+  content: ""; position: absolute; z-index: 1; left: 50%; top: 50%; width: 12px; height: 12px;
+  margin: -6px 0 0 -6px; border-radius: 50%; background: #22d3ee; box-shadow: 0 0 14px 2px #22d3ee;
+}
+.ctm-brand-name { font-size: 17px; font-weight: 700; line-height: 1.15; color: #ffffff !important; }
+.ctm-brand-tag { font-family: var(--ctm-mono); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--ctm-muted) !important; }
+.ctm-side-card {
+  border-radius: 14px; border: 1px solid var(--ctm-line); background: rgba(255, 255, 255, 0.025);
+  padding: 12px 14px; margin: 10px 0 4px;
+}
+.ctm-side-row { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 0;
+  font-size: 12.5px; color: var(--ctm-muted) !important; }
+.ctm-side-row b { font-family: var(--ctm-mono); font-weight: 500; color: #ffffff !important; }
+.ctm-legend { display: flex; align-items: center; gap: 9px; padding: 4px 0; font-size: 12.5px; }
+.ctm-swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+[data-testid="stSidebar"] label p {
+  font-family: var(--ctm-mono); font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--ctm-muted) !important;
+}
+[data-testid="stSidebar"] [data-baseweb="select"] > div {
+  background: rgba(255, 255, 255, 0.03) !important; border: 1px solid var(--ctm-line) !important;
+  border-radius: 12px !important; transition: border-color .2s ease, box-shadow .2s ease;
+}
+[data-testid="stSidebar"] [data-baseweb="select"] > div:hover,
+[data-testid="stSidebar"] [data-baseweb="select"] > div:focus-within {
+  border-color: var(--ctm-cyan) !important; box-shadow: 0 0 18px -8px var(--ctm-cyan);
+}
+[data-testid="stSidebar"] [data-baseweb="tag"] {
+  background: rgba(34, 211, 238, 0.14) !important; border: 1px solid rgba(34, 211, 238, 0.5);
+  border-radius: 999px !important;
+}
+[data-testid="stSidebar"] .stButton > button {
+  width: 100%; border-radius: 12px; border: 1px solid rgba(34, 211, 238, 0.45);
+  background: linear-gradient(90deg, rgba(34, 211, 238, 0.14), rgba(139, 92, 246, 0.14));
+  color: #ffffff; font-family: var(--ctm-mono); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
+  transition: all .2s ease;
+}
+[data-testid="stSidebar"] .stButton > button:hover {
+  border-color: var(--ctm-cyan); box-shadow: 0 0 22px -8px var(--ctm-cyan); transform: translateY(-1px);
+}
+
 .ctm-foot { margin-top: 26px; color: var(--ctm-muted) !important; font-size: 12px; font-family: var(--ctm-mono); }
 
 @keyframes ctm-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
-@keyframes ctm-grow { from { width: 0; } to { width: var(--w, 0%); } }
+@keyframes ctm-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @keyframes ctm-scan { 0% { left: -40%; } 55%, 100% { left: 120%; } }
-@keyframes ctm-sheen { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
-@keyframes ctm-drift { from { background-position: 0 0, 0 0; } to { background-position: 0 440px, 440px 0; } }
 @keyframes ctm-pulse {
   0% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.7); }
   70% { box-shadow: 0 0 0 10px rgba(34, 211, 238, 0); }
   100% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .ctm-hero, .ctm-hero::after, .ctm-card, .ctm-bar > i, .ctm-title, .ctm-dot,
-  [data-testid="stAppViewContainer"]::before { animation: none !important; }
+  .ctm-hero, .ctm-hero::after, .ctm-card, .ctm-bar > i, .ctm-dot, .ctm-brand-mark { animation: none !important; }
 }
 </style>
 """
 
 
 # ------------------------------------------------------------------ data
-@st.cache_data(ttl=300, show_spinner="Reading CoCo usage...")
+@st.cache_data(ttl=600, show_spinner="Reading CoCo usage...")
 def load_requests(days: int) -> pd.DataFrame:
     df = session.sql(
         f"""
@@ -252,7 +316,7 @@ def load_requests(days: int) -> pd.DataFrame:
     return df
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)
 def load_titles() -> pd.DataFrame:
     return session.sql(
         f"""
@@ -262,13 +326,13 @@ def load_titles() -> pd.DataFrame:
     ).to_pandas()
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)
 def load_settings() -> dict:
     df = session.sql(f"SELECT KEY, VALUE FROM {SCHEMA}.SETTINGS").to_pandas()
     return dict(zip(df["KEY"], df["VALUE"]))
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)
 def load_savings() -> pd.DataFrame:
     df = session.sql(f"SELECT * FROM {SCHEMA}.SAVINGS_ESTIMATE").to_pandas()
     for col in df.columns:
@@ -282,14 +346,17 @@ def esc(value) -> str:
     return html.escape("" if value is None or (isinstance(value, float) and pd.isna(value)) else str(value))
 
 
+ACCENT_CLASS = {CYAN: "acc-cyan", VIOLET: "acc-violet", PINK: "acc-pink", AMBER: "acc-amber", GREEN: "acc-green", BLUE: "acc-blue"}
+
+
 def card(label: str, value: str, note: str = "", accent: str = CYAN, bar=None, unit: str = "") -> str:
     bar_html = ""
     if bar is not None:
         width = max(0.0, min(100.0, float(bar)))
-        bar_html = f'<div class="ctm-bar"><i style="--w:{width:.1f}%"></i></div>'
+        bar_html = f'<div class="ctm-bar"><i style="width:{width:.1f}%"></i></div>'
     unit_html = f"<small>{esc(unit)}</small>" if unit else ""
     return (
-        f'<div class="ctm-card" style="--accent:{accent}">'
+        f'<div class="ctm-card {ACCENT_CLASS.get(accent, "acc-cyan")}">'
         f'<div class="ctm-label">{esc(label)}</div>'
         f'<div class="ctm-value">{esc(value)}{unit_html}</div>'
         f'<div class="ctm-note">{esc(note)}</div>{bar_html}</div>'
@@ -331,11 +398,11 @@ def table(rows, columns) -> None:
 
 
 def chip(text: str, color: str) -> str:
-    return f'<span class="ctm-chip" style="--chip:{color}">{esc(text)}</span>'
+    return f'<span class="ctm-chip" style="color:{color};border-color:{color}">{esc(text)}</span>'
 
 
 def meter(share: float) -> str:
-    return f'<span class="ctm-meter"><i style="--w:{max(0.0, min(100.0, share)):.1f}%"></i></span>'
+    return f'<span class="ctm-meter"><i style="width:{max(0.0, min(100.0, share)):.1f}%"></i></span>'
 
 
 def styled(fig: go.Figure, height: int = 340) -> go.Figure:
@@ -368,6 +435,12 @@ def money(credits: float, price, currency: str) -> str:
 st.markdown(CSS, unsafe_allow_html=True)
 
 with st.sidebar:
+    st.markdown(
+        '<div class="ctm-brand"><div class="ctm-brand-mark"></div><div>'
+        '<div class="ctm-brand-name">CoCo Token Meter</div>'
+        '<div class="ctm-brand-tag">admin console</div></div></div>',
+        unsafe_allow_html=True,
+    )
     st.markdown('<div class="ctm-h">Filters</div>', unsafe_allow_html=True)
     days = st.selectbox("Period", [7, 30, 90, 365], index=1, format_func=lambda d: f"Last {d} days")
     if st.button("Refresh data"):
@@ -395,11 +468,7 @@ with st.sidebar:
     picked_users = st.multiselect("Users", users, default=[])
     interfaces = sorted(requests["INTERFACE"].dropna().unique())
     picked_interfaces = st.multiselect("Interfaces", interfaces, default=[])
-    st.markdown(
-        '<div class="ctm-foot">Leave a filter empty to include everything. '
-        "Data is cached for 5 minutes.</div>",
-        unsafe_allow_html=True,
-    )
+    side_slot = st.container()
 
 data = requests
 if picked_users:
@@ -444,6 +513,29 @@ parts["Share"] = (100 * parts["Credits"] / total_credits) if total_credits else 
 parts = parts.sort_values("Credits", ascending=False).reset_index(drop=True)
 top_part = parts.iloc[0]
 
+with side_slot:
+    st.markdown(
+        '<div class="ctm-h">In view</div><div class="ctm-side-card">'
+        f'<div class="ctm-side-row"><span>Credits</span><b>{total_credits:,.2f}</b></div>'
+        f'<div class="ctm-side-row"><span>Chats</span><b>{chat_count:,}</b></div>'
+        f'<div class="ctm-side-row"><span>Requests</span><b>{len(data):,}</b></div>'
+        f'<div class="ctm-side-row"><span>Data through</span><b>{esc(latest.strftime("%b %d %H:%M"))} UTC</b></div>'
+        "</div>"
+        '<div class="ctm-h">Request kinds</div><div class="ctm-side-card">'
+        + "".join(
+            f'<div class="ctm-legend"><span class="ctm-swatch" style="background:{color}"></span>{esc(text)}</div>'
+            for text, color in [
+                ("Cold start: a new chat loads its context", PINK),
+                ("Idle reload: resumed after a pause", AMBER),
+                ("Large addition: big tool result", VIOLET),
+                ("Normal request", CYAN),
+            ]
+        )
+        + "</div>"
+        '<div class="ctm-foot">Empty filter = everything.<br>Data is cached for 10 minutes.</div>',
+        unsafe_allow_html=True,
+    )
+
 # ---- hero
 scope = []
 if picked_users:
@@ -477,12 +569,12 @@ cards(
     ]
 )
 
-tab_overview, tab_chats, tab_users, tab_savings, tab_chat = st.tabs(
-    ["Overview", "Chats", "Users", "Savings", "Chat explorer"]
+view = st.radio(
+    "View", ["Overview", "Chats", "Users", "Savings", "Chat explorer"], horizontal=True, label_visibility="collapsed"
 )
 
 # ------------------------------------------------------------------ overview
-with tab_overview:
+if view == "Overview":
     left, right = st.columns([3, 2])
     with left:
         heading("Credits per day", "Stacked by what the credits paid for.")
@@ -606,7 +698,7 @@ if not chats.empty:
     chats = chats.sort_values("Credits", ascending=False).reset_index(drop=True)
 max_chat_credits = float(chats["Credits"].max()) if not chats.empty else 0.0
 
-with tab_chats:
+if view == "Chats":
     heading(
         "Most expensive chats",
         "A chat has a name once its owner has synced their chat names, which the CoCo skill does for them.",
@@ -654,7 +746,7 @@ with tab_chats:
             st.dataframe(chats.set_index("Thread"), use_container_width=True)
 
 # ------------------------------------------------------------------ users
-with tab_users:
+if view == "Users":
     heading("Usage per user", "Each block is a chat. Its size is what the chat cost.")
     if chats.empty:
         st.info("No chats in this period.")
@@ -705,7 +797,7 @@ with tab_users:
         )
 
 # ------------------------------------------------------------------ savings
-with tab_savings:
+if view == "Savings":
     heading(
         "What could have been saved",
         "Last 30 days. Estimates and upper bounds, not promises. The three figures overlap; do not add them up.",
@@ -765,7 +857,7 @@ with tab_savings:
         )
 
 # ------------------------------------------------------------------ one chat
-with tab_chat:
+if view == "Chat explorer":
     heading("Chat explorer", "Pick a chat to see every request in it and what made it expensive.")
     if chats.empty:
         st.info("No chats in this period.")
