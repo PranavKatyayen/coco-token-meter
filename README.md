@@ -334,8 +334,9 @@ CoCo sets for shell commands, in the CLI and in Snowsight.
   many users have not been tested.
 - **Tested on Windows only**, with CoCo CLI 1.2.45. macOS and Linux have not
   been tried, and the previous-chat line is a PowerShell script.
-- **The dashboard has not been looked at in a browser yet.** Its code was run
-  inside Snowflake against real data and every section produced output.
+- **The dashboard's current design has not been reviewed in a browser.** Its
+  code was run inside Snowflake against real data and every section produced
+  output. It pins Streamlit 1.44.1 and Plotly 5.24.1 in `dashboard/environment.yml`.
 - **Email alerts have not been sent.** Logging breaches is tested.
 - **Slash commands were tested through their skills.** The CLI was run
   headless, where plugin commands are not expanded and the skills answer.

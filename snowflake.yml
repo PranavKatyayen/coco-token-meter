@@ -15,6 +15,8 @@ entities:
         dest: README.md
       - src: dashboard/streamlit_app.py
         dest: streamlit/streamlit_app.py
+      - src: dashboard/environment.yml
+        dest: streamlit/environment.yml
   coco_token_meter_app:
     type: application
     identifier: COCO_TOKEN_METER_APP
