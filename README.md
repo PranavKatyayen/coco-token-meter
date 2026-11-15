@@ -323,15 +323,22 @@ CoCo sets for shell commands, in the CLI and in Snowsight.
 
 ## Limits
 
-- **Tested in one small account.** One user, 223 requests. Large accounts and
-  many users have not been tested.
+- **Tested in one small account.** A few hundred requests from four users,
+  three of them temporary test users driving the CoCo CLI. Large accounts
+  have not been tested.
+- **A brand-new Snowflake user has no name at first.** Snowflake fills in the
+  user name in its usage history a few minutes after the user's first
+  request (about 10 minutes in our test; its user list can lag up to two
+  hours). Until then the user appears as `(user id N)` and their own `MY_*`
+  views are empty.
 - **Tested on Windows only**, with CoCo CLI 1.2.45. macOS and Linux have not
   been tried, and the previous-chat line is a PowerShell script.
 - **The dashboard's current design has not been reviewed in a browser.** Its
   code was run inside Snowflake against real data and every section produced
   output. It pins Streamlit 1.44.1 and Plotly 5.24.1 in `dashboard/environment.yml`.
-- **Limits were tested by setting and unsetting one.** Nobody has been
-  blocked by a limit in our tests, so the blocked experience is unverified.
+- **Limits were tested at 0 and by setting and unsetting.** A user set to 0
+  was blocked in the CLI with Snowflake's own message. A positive limit being
+  reached was not tested. Limits must be whole numbers.
 - **Slash commands were tested through their skills.** The CLI was run
   headless, where plugin commands are not expanded and the skills answer.
 - **"This chat" shows nothing on the first message of a chat**, because a

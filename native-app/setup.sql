@@ -49,7 +49,7 @@ BEGIN
       u.REQUEST_ID,
       ANY_VALUE(u.THREAD_ID)                              AS THREAD_ID,
       ANY_VALUE(u.PARENT_REQUEST_ID)                      AS PARENT_REQUEST_ID,
-      ANY_VALUE(u.USER_NAME)                              AS USER_NAME,
+      ANY_VALUE(COALESCE(u.USER_NAME, '(user id ' || u.USER_ID || ')')) AS USER_NAME,
       ANY_VALUE(u.INTERFACE)                              AS INTERFACE,
       ANY_VALUE(u.USAGE_TIME)                             AS USAGE_TIME,
       ANY_VALUE(u.TOKENS)                                 AS TOTAL_TOKENS,

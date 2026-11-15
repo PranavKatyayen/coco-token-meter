@@ -23,7 +23,11 @@ One parameter per CoCo surface:
 - `-1` (the default) means no limit. `0` blocks the user on that surface. A
   positive number blocks the user once their estimated credits over the past
   24 hours pass it; access comes back as older usage drops out of the window.
+- The value must be a whole number. `0.5` is rejected with "invalid value".
 - A value set on a user overrides the account value for that user.
+- A user blocked with `0` sees: "Cortex Code access is currently disabled
+  (daily usage limit is set to 0 credits). Contact your Snowflake administrator
+  to enable access by setting a non-zero per-user credit limit."
 - Snowflake counts *estimated* credits for the limit. They can differ a
   little from the billed credits in the usage views.
 
@@ -86,7 +90,7 @@ FROM (
 GROUP BY INTERFACE;
 ```
 
-Suggest a limit a little above `BUSY_USER_DAY` so normal work is not blocked,
+Suggest a whole number a little above `BUSY_USER_DAY` so normal work is not blocked,
 and say how many user-days in the period would have hit it. With fewer than
 about 10 user-days of data, say that the sample is too small to size from.
 

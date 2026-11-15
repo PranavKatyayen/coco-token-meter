@@ -46,6 +46,10 @@ CREATE TABLE IF NOT EXISTS CHAT_TITLES (
 -- split is summed over models. The usage history is read once per query:
 -- every other view is built on this one.
 --
+-- Snowflake fills in USER_NAME from its user list, which can run up to two
+-- hours behind. Until then a new user's requests have no name; they are shown
+-- as '(user id N)' and that user's MY_* views stay empty.
+--
 -- For requests that belong to a chat (THREAD_ID is not null) the view also
 -- numbers them, gives the idle time before each one, running totals, and
 -- REQUEST_KIND, which explains requests that paid for a large cache write
@@ -68,7 +72,7 @@ WITH split AS (
     u.REQUEST_ID,
     ANY_VALUE(u.THREAD_ID)                              AS THREAD_ID,
     ANY_VALUE(u.PARENT_REQUEST_ID)                      AS PARENT_REQUEST_ID,
-    ANY_VALUE(u.USER_NAME)                              AS USER_NAME,
+    ANY_VALUE(COALESCE(u.USER_NAME, '(user id ' || u.USER_ID || ')')) AS USER_NAME,
     ANY_VALUE(u.INTERFACE)                              AS INTERFACE,
     ANY_VALUE(u.USAGE_TIME)                             AS USAGE_TIME,
     ANY_VALUE(u.TOKENS)                                 AS TOTAL_TOKENS,
