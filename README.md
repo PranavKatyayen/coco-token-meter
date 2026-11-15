@@ -66,9 +66,9 @@ cd coco-token-meter
 
 ### A. SQL install (recommended)
 
-One script, run once per account by a role that can read
-`SNOWFLAKE.ACCOUNT_USAGE` and create a database and roles (`ACCOUNTADMIN` is
-the simple choice):
+One script, run once per account from the repository root, by a role that can
+read `SNOWFLAKE.ACCOUNT_USAGE` and create a database and roles (`ACCOUNTADMIN`
+is the simple choice):
 
 ```bash
 snow sql -c <connection> -f sql/setup.sql
@@ -117,8 +117,21 @@ the SQL install first (see Limits).
 
 ### C. Skills for CoCo in Snowsight
 
-Each user runs this once. It copies the skills into their Snowsight personal
-workspace, under `.snowflake/cortex/skills/`:
+CoCo in Snowsight loads skills from each user's own workspace, which only
+that user can write to. After the SQL install, every user runs one statement
+in any Snowsight worksheet, once:
+
+```sql
+CALL COCO_TOKEN_METER.USAGE.INSTALL_MY_SKILLS();
+```
+
+Then they open a new CoCo chat and ask *show my CoCo token usage per chat*.
+Admins add the limits skill with `INSTALL_MY_SKILLS(TRUE)`. To remove them,
+`CALL COCO_TOKEN_METER.USAGE.UNINSTALL_MY_SKILLS();`. No CLI and no files are
+needed; the user needs the `COCO_TOKEN_METER_USER` role.
+
+With the Snowflake CLI and a clone of the repository, this does the same and
+also installs the experimental lean-mode skill:
 
 ```bash
 snow sql -c <connection> -f sql/install_snowsight_skills.sql

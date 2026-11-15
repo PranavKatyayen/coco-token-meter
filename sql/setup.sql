@@ -473,6 +473,59 @@ def run(session):
     return "Chat names stored or refreshed: %s" % stored
 $$;
 -- ---------------------------------------------------------------------------
+-- Skills for CoCo in Snowsight. CoCo loads skills from each user's own
+-- workspace, which only that user can write to. So the skill files are kept
+-- on a stage here, and every user copies them into their workspace with one
+-- statement, from any worksheet:
+--
+--   CALL COCO_TOKEN_METER.USAGE.INSTALL_MY_SKILLS();       -- usage skill
+--   CALL COCO_TOKEN_METER.USAGE.INSTALL_MY_SKILLS(TRUE);   -- plus the admin limits skill
+--   CALL COCO_TOKEN_METER.USAGE.UNINSTALL_MY_SKILLS();
+--
+-- The PUT statements below read the files from this repository, so run this
+-- script from the repository root.
+-- ---------------------------------------------------------------------------
+CREATE STAGE IF NOT EXISTS SKILLS_STAGE
+  DIRECTORY = (ENABLE = TRUE)
+  ENCRYPTION = (TYPE = 'SNOWFLAKE_SSE')
+  COMMENT = 'coco-token-meter: skill files that INSTALL_MY_SKILLS copies into a user workspace';
+
+PUT 'file://skills/coco-token-usage/SKILL.md' @SKILLS_STAGE/coco-token-usage/
+    AUTO_COMPRESS = FALSE OVERWRITE = TRUE;
+PUT 'file://skills/coco-admin-limits/SKILL.md' @SKILLS_STAGE/coco-admin-limits/
+    AUTO_COMPRESS = FALSE OVERWRITE = TRUE;
+
+CREATE OR REPLACE PROCEDURE INSTALL_MY_SKILLS(INCLUDE_ADMIN_SKILL BOOLEAN DEFAULT FALSE)
+  RETURNS STRING
+  LANGUAGE SQL
+  EXECUTE AS CALLER
+AS
+$$
+BEGIN
+  COPY FILES INTO 'snow://workspace/USER$.PUBLIC."DEFAULT$"/versions/live/.snowflake/cortex/skills/coco-token-usage/'
+    FROM @COCO_TOKEN_METER.USAGE.SKILLS_STAGE/coco-token-usage/;
+  IF (INCLUDE_ADMIN_SKILL) THEN
+    COPY FILES INTO 'snow://workspace/USER$.PUBLIC."DEFAULT$"/versions/live/.snowflake/cortex/skills/coco-admin-limits/'
+      FROM @COCO_TOKEN_METER.USAGE.SKILLS_STAGE/coco-admin-limits/;
+    RETURN 'Installed coco-token-usage and coco-admin-limits. Open a new CoCo chat and ask: show my CoCo token usage per chat';
+  END IF;
+  RETURN 'Installed coco-token-usage. Open a new CoCo chat and ask: show my CoCo token usage per chat';
+END;
+$$;
+
+CREATE OR REPLACE PROCEDURE UNINSTALL_MY_SKILLS()
+  RETURNS STRING
+  LANGUAGE SQL
+  EXECUTE AS CALLER
+AS
+$$
+BEGIN
+  REMOVE 'snow://workspace/USER$.PUBLIC."DEFAULT$"/versions/live/.snowflake/cortex/skills/coco-token-usage/';
+  REMOVE 'snow://workspace/USER$.PUBLIC."DEFAULT$"/versions/live/.snowflake/cortex/skills/coco-admin-limits/';
+  RETURN 'Removed the coco-token-meter skills from your workspace.';
+END;
+$$;
+-- ---------------------------------------------------------------------------
 -- Access. COCO_TOKEN_METER_USER sees only their own usage;
 -- COCO_TOKEN_METER_ADMIN sees every user's usage.
 -- To let everyone see their own usage:
@@ -506,5 +559,9 @@ GRANT USAGE ON PROCEDURE STORE_MY_CHAT_TITLES(VARIANT)   TO ROLE COCO_TOKEN_METE
 GRANT USAGE ON PROCEDURE SET_SETTING(STRING, STRING)     TO ROLE COCO_TOKEN_METER_ADMIN;
 GRANT SELECT ON TABLE SETTINGS                           TO ROLE COCO_TOKEN_METER_ADMIN;
 GRANT SELECT ON TABLE CHAT_TITLES                        TO ROLE COCO_TOKEN_METER_ADMIN;
+
+GRANT READ ON STAGE SKILLS_STAGE                         TO ROLE COCO_TOKEN_METER_USER;
+GRANT USAGE ON PROCEDURE INSTALL_MY_SKILLS(BOOLEAN)      TO ROLE COCO_TOKEN_METER_USER;
+GRANT USAGE ON PROCEDURE UNINSTALL_MY_SKILLS()           TO ROLE COCO_TOKEN_METER_USER;
 
 GRANT ROLE COCO_TOKEN_METER_ADMIN TO ROLE SYSADMIN;
