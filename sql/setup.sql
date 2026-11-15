@@ -243,6 +243,62 @@ SELECT
 FROM REQUESTS
 GROUP BY USER_NAME, INTERFACE, USAGE_TIME::DATE;
 -- ---------------------------------------------------------------------------
+-- SAVINGS_ESTIMATE: per user, last 30 days, what three changes of habit could
+-- have saved. These are estimates and upper bounds, not promises.
+--   QUICK_RESTART_SAVING  chats started cold within 5 minutes of the same
+--                         user's previous chat on the same interface. As a
+--                         follow-up in that chat the starting context would
+--                         have been read from the cache instead of written.
+--   IDLE_RELOAD_SAVING    chats resumed after the cache expired.
+--   SLIM_SAVING_LOW/HIGH  CoCo CLI cold starts with 20 / all bundled skills
+--                         turned off (16% / 46% less starting context,
+--                         measured with CoCo CLI 1.2.45).
+-- 0.96 is the share saved when context is read from the cache instead of
+-- written (cache read 0.11 vs cache write 2.75 credits per million tokens).
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE VIEW SAVINGS_ESTIMATE
+  COMMENT = 'Estimated avoidable CoCo credits per user over the last 30 days. All users.'
+AS
+WITH chat AS (
+  SELECT
+    THREAD_ID,
+    MIN(USER_NAME)   AS USER_NAME,
+    MIN(INTERFACE)   AS INTERFACE,
+    MIN(USAGE_TIME)  AS STARTED_AT,
+    MAX(USAGE_TIME)  AS LAST_ACTIVITY_AT,
+    SUM(CREDITS)     AS CREDITS,
+    SUM(IFF(REQUEST_KIND = 'cold start', CACHE_WRITE_CREDITS, 0))  AS COLD_START_CREDITS,
+    COUNT_IF(REQUEST_KIND = 'idle reload')                         AS IDLE_RELOADS,
+    SUM(IFF(REQUEST_KIND = 'idle reload', CACHE_WRITE_CREDITS, 0)) AS IDLE_RELOAD_CREDITS
+  FROM REQUESTS
+  WHERE THREAD_ID IS NOT NULL
+    AND USAGE_TIME >= DATEADD('day', -30, CURRENT_TIMESTAMP())
+  GROUP BY THREAD_ID
+),
+seq AS (
+  SELECT
+    c.*,
+    DATEDIFF('second',
+             LAG(LAST_ACTIVITY_AT) OVER (PARTITION BY USER_NAME, INTERFACE ORDER BY STARTED_AT),
+             STARTED_AT) AS SECONDS_AFTER_PREVIOUS_CHAT
+  FROM chat c
+)
+SELECT
+  USER_NAME,
+  COUNT(*)                                   AS CHATS,
+  ROUND(SUM(CREDITS), 4)                     AS CREDITS,
+  COUNT_IF(COLD_START_CREDITS > 0)           AS COLD_STARTS,
+  ROUND(SUM(COLD_START_CREDITS), 4)          AS COLD_START_CREDITS,
+  COUNT_IF(COLD_START_CREDITS > 0 AND SECONDS_AFTER_PREVIOUS_CHAT BETWEEN 0 AND 300) AS QUICK_RESTARTS,
+  ROUND(0.96 * SUM(IFF(COLD_START_CREDITS > 0 AND SECONDS_AFTER_PREVIOUS_CHAT BETWEEN 0 AND 300,
+                       COLD_START_CREDITS, 0)), 4)                                   AS QUICK_RESTART_SAVING,
+  SUM(IDLE_RELOADS)                          AS IDLE_RELOADS,
+  ROUND(0.96 * SUM(IDLE_RELOAD_CREDITS), 4)  AS IDLE_RELOAD_SAVING,
+  ROUND(0.16 * SUM(IFF(INTERFACE = 'cli', COLD_START_CREDITS, 0)), 4) AS SLIM_SAVING_LOW,
+  ROUND(0.46 * SUM(IFF(INTERFACE = 'cli', COLD_START_CREDITS, 0)), 4) AS SLIM_SAVING_HIGH
+FROM seq
+GROUP BY USER_NAME;
+-- ---------------------------------------------------------------------------
 -- MODEL_RATES: credits per million tokens for each model and token category,
 -- computed from what this account was actually billed. No per-user data.
 -- ---------------------------------------------------------------------------
@@ -283,6 +339,11 @@ CREATE OR REPLACE SECURE VIEW MY_BACKGROUND_USAGE
   COMMENT = 'BACKGROUND_USAGE limited to CURRENT_USER().'
 AS
 SELECT * FROM BACKGROUND_USAGE WHERE USER_NAME = CURRENT_USER();
+
+CREATE OR REPLACE SECURE VIEW MY_SAVINGS_ESTIMATE
+  COMMENT = 'SAVINGS_ESTIMATE limited to CURRENT_USER().'
+AS
+SELECT * FROM SAVINGS_ESTIMATE WHERE USER_NAME = CURRENT_USER();
 
 CREATE OR REPLACE SECURE VIEW MY_DAILY_USAGE
   COMMENT = 'DAILY_USAGE limited to CURRENT_USER().'
@@ -405,6 +466,7 @@ GRANT SELECT ON VIEW MY_CHATS            TO ROLE COCO_TOKEN_METER_USER;
 GRANT SELECT ON VIEW MY_CHAT_REQUESTS    TO ROLE COCO_TOKEN_METER_USER;
 GRANT SELECT ON VIEW MY_BACKGROUND_USAGE TO ROLE COCO_TOKEN_METER_USER;
 GRANT SELECT ON VIEW MY_DAILY_USAGE      TO ROLE COCO_TOKEN_METER_USER;
+GRANT SELECT ON VIEW MY_SAVINGS_ESTIMATE TO ROLE COCO_TOKEN_METER_USER;
 GRANT SELECT ON VIEW MODEL_RATES         TO ROLE COCO_TOKEN_METER_USER;
 
 GRANT ROLE COCO_TOKEN_METER_USER TO ROLE COCO_TOKEN_METER_ADMIN;
@@ -413,6 +475,7 @@ GRANT SELECT ON VIEW CHAT_REQUESTS    TO ROLE COCO_TOKEN_METER_ADMIN;
 GRANT SELECT ON VIEW CHATS            TO ROLE COCO_TOKEN_METER_ADMIN;
 GRANT SELECT ON VIEW BACKGROUND_USAGE TO ROLE COCO_TOKEN_METER_ADMIN;
 GRANT SELECT ON VIEW DAILY_USAGE      TO ROLE COCO_TOKEN_METER_ADMIN;
+GRANT SELECT ON VIEW SAVINGS_ESTIMATE TO ROLE COCO_TOKEN_METER_ADMIN;
 
 GRANT USAGE ON PROCEDURE SYNC_MY_CHAT_TITLES()          TO ROLE COCO_TOKEN_METER_USER;
 GRANT USAGE ON PROCEDURE STORE_MY_CHAT_TITLES(VARIANT)   TO ROLE COCO_TOKEN_METER_USER;
