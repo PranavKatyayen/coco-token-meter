@@ -37,7 +37,7 @@ that cost the most:
 - **Request-by-request view** of any chat, with running totals and a label on
   the expensive requests (cold start, idle reload, large addition).
 - **For admins**: credits per user, each user's most expensive chats, a
-  dashboard, and optional budget alerts.
+  dashboard, and a skill that sets Snowflake's daily credit limit per user.
 - **Cost in money**, once you set what you pay per credit.
 - **A savings estimate**: what follow-ups instead of new chats, fewer pauses,
   and `/slim` could have saved.
@@ -89,14 +89,10 @@ GRANT ROLE COCO_TOKEN_METER_USER TO ROLE PUBLIC;
 
 Users need no access to `SNOWFLAKE.ACCOUNT_USAGE`. They do need a warehouse.
 
-Optional extras, each one command:
+The admin dashboard is one more command:
 
 ```bash
 snow sql -c <connection> -f sql/dashboard.sql -D "warehouse=<warehouse>"
-```
-
-```bash
-snow sql -c <connection> -f sql/alerts.sql
 ```
 
 ### B. Native app install
@@ -116,7 +112,7 @@ CALL COCO_TOKEN_METER_APP.USAGE.ACTIVATE();
 ```
 
 Then grant `COCO_TOKEN_METER_APP.APP_ADMIN` or `APP_USER` to your roles. The
-app does not include chat names or budget alerts yet, and the skills look for
+app does not include chat names yet, and the skills look for
 the SQL install first (see Limits).
 
 ### C. Skills for CoCo in Snowsight
@@ -134,7 +130,8 @@ snow sql -c <connection> -f sql/install_snowsight_skills.sql
 cortex plugin install PranavKatyayen/coco-token-meter
 ```
 
-This adds the `/tokens`, `/slim` and `/lean` commands and their skills.
+This adds the `/tokens`, `/slim`, `/limits` and `/lean` commands and their
+skills.
 Restart CoCo or run `/plugin reload`.
 
 ## Use
@@ -149,6 +146,7 @@ Restart CoCo or run `/plugin reload`.
 | `/tokens tips` | "where do my CoCo credits go?" | credit split and what to change |
 | `/tokens all` | "CoCo usage for all users" | all users (admin role) |
 | `/slim` | | bundled skills you can turn off (CLI only) |
+| `/limits` | "show the CoCo credit limits" | daily credit limit per user (admins) |
 
 Or query the views directly:
 
@@ -196,25 +194,20 @@ CALL COCO_TOKEN_METER.USAGE.SET_SETTING('CREDIT_PRICE', '3');
 CALL COCO_TOKEN_METER.USAGE.SET_SETTING('CURRENCY', 'USD');
 ```
 
-**Budget alerts.** After `sql/alerts.sql`, set at least one limit and switch
-the alert on:
+**Credit limits per user.** Snowflake has a built-in daily CoCo credit limit
+per user, one per surface (CLI, Snowsight, Desktop). The `coco-admin-limits`
+skill reads and changes it from CoCo, and always shows the statement and asks
+before changing anything. Ask, for example:
 
-```sql
-CALL COCO_TOKEN_METER.USAGE.SET_SETTING('DAILY_USER_CREDIT_LIMIT', '5');
-```
+- "show the CoCo credit limits"
+- "who is close to their CoCo limit?"
+- "what daily limit should I set, based on usage?"
+- "set a 10 credit daily CLI limit for user JSMITH"
+- "block JSMITH from CoCo in Snowsight"
 
-```sql
-CALL COCO_TOKEN_METER.USAGE.SET_SETTING('CHAT_CREDIT_LIMIT', '1');
-```
-
-```sql
-ALTER ALERT COCO_TOKEN_METER.USAGE.COCO_BUDGET_ALERT RESUME;
-```
-
-Every hour it writes each new breach to `ALERT_LOG`; `BUDGET_BREACHES` shows
-what is over a limit now. The alert is created suspended and is serverless,
-so it needs the `EXECUTE MANAGED ALERT` privilege. For email, also set
-`ALERT_EMAIL_INTEGRATION` and `ALERT_EMAIL_TO`.
+`ROLLING_24H_USAGE` shows credits per user and surface over the same rolling
+24 hours the limit uses. For monthly limits, groups of users, or an automatic
+action at the limit, use Snowflake's per-user quotas and budgets.
 
 ## What the numbers mean
 
@@ -317,7 +310,7 @@ it off. It reads only local files the CLI writes and uses the rates in
 | `MODEL_RATES` | credits per million tokens actually billed, by model and category |
 | `MY_CHATS`, `MY_CHAT_REQUESTS`, `MY_DAILY_USAGE`, `MY_BACKGROUND_USAGE`, `MY_SAVINGS_ESTIMATE` | the same, limited to `CURRENT_USER()` |
 | `SETTINGS`, `CHAT_TITLES` | small tables behind `SET_SETTING` and `SYNC_MY_CHAT_TITLES` |
-| `BUDGET_BREACHES`, `ALERT_LOG`, `COCO_BUDGET_ALERT` | budget alerts, from `sql/alerts.sql` |
+| `ROLLING_24H_USAGE` | credits per user and surface over the past 24 hours |
 | `COCO_TOKEN_METER_DASHBOARD` | the admin dashboard, from `sql/dashboard.sql` |
 
 Every usage view reads
@@ -337,7 +330,8 @@ CoCo sets for shell commands, in the CLI and in Snowsight.
 - **The dashboard's current design has not been reviewed in a browser.** Its
   code was run inside Snowflake against real data and every section produced
   output. It pins Streamlit 1.44.1 and Plotly 5.24.1 in `dashboard/environment.yml`.
-- **Email alerts have not been sent.** Logging breaches is tested.
+- **Limits were tested by setting and unsetting one.** Nobody has been
+  blocked by a limit in our tests, so the blocked experience is unverified.
 - **Slash commands were tested through their skills.** The CLI was run
   headless, where plugin commands are not expanded and the skills answer.
 - **"This chat" shows nothing on the first message of a chat**, because a
@@ -347,7 +341,7 @@ CoCo sets for shell commands, in the CLI and in Snowsight.
   this purpose. If it stops working, everything else still does.
 - **Savings are estimates and upper bounds.** The three figures overlap and
   must not be added up.
-- **The native app has no chat names or alerts yet**, and the skills query
+- **The native app has no chat names yet**, and the skills query
   `COCO_TOKEN_METER` first and fall back to `COCO_TOKEN_METER_APP`.
   `native-app/setup.sql` is generated from `sql/setup.sql`; keep them in step.
 - **Not live to the second.** The views are as fresh as Snowflake's usage

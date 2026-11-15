@@ -19,7 +19,6 @@ USE SCHEMA COCO_TOKEN_METER.USAGE;
 -- SETTINGS: optional key/value settings, changed with SET_SETTING.
 --   CREDIT_PRICE      what you pay for one credit; turns credits into COST
 --   CURRENCY          label for COST, for example USD
---   (sql/alerts.sql adds the budget settings)
 -- CHAT_TITLES: chat names, filled by SYNC_MY_CHAT_TITLES. Snowflake's usage
 -- history has thread ids only, so names are fetched per user on request.
 -- ---------------------------------------------------------------------------
@@ -299,6 +298,27 @@ SELECT
 FROM seq
 GROUP BY USER_NAME;
 -- ---------------------------------------------------------------------------
+-- ROLLING_24H_USAGE: credits per user and interface over the past 24 hours,
+-- the same window Snowflake's daily per-user CoCo credit limits use
+-- (CORTEX_CODE_<surface>_DAILY_EST_CREDIT_LIMIT_PER_USER). Snowflake enforces
+-- on estimated credits, which can differ a little from these billed credits.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE VIEW ROLLING_24H_USAGE
+  COMMENT = 'CoCo credits per user and interface over the past 24 hours. All users.'
+AS
+SELECT
+  USER_NAME,
+  INTERFACE,
+  COUNT(DISTINCT THREAD_ID) AS CHATS,
+  COUNT(*)                  AS REQUESTS,
+  SUM(TOTAL_TOKENS)         AS TOTAL_TOKENS,
+  SUM(CREDITS)              AS CREDITS,
+  MAX(USAGE_TIME)           AS LAST_ACTIVITY_AT
+FROM REQUESTS
+WHERE USAGE_TIME >= DATEADD('hour', -24, CURRENT_TIMESTAMP())
+GROUP BY USER_NAME, INTERFACE;
+
+-- ---------------------------------------------------------------------------
 -- MODEL_RATES: credits per million tokens for each model and token category,
 -- computed from what this account was actually billed. No per-user data.
 -- ---------------------------------------------------------------------------
@@ -362,11 +382,10 @@ CREATE OR REPLACE PROCEDURE SET_SETTING(SETTING_KEY STRING, SETTING_VALUE STRING
 AS
 $$
 BEGIN
-  IF (UPPER(SETTING_KEY) NOT IN ('CREDIT_PRICE', 'CURRENCY', 'DAILY_USER_CREDIT_LIMIT',
-                                 'CHAT_CREDIT_LIMIT', 'ALERT_EMAIL_INTEGRATION', 'ALERT_EMAIL_TO')) THEN
+  IF (UPPER(SETTING_KEY) NOT IN ('CREDIT_PRICE', 'CURRENCY')) THEN
     RETURN 'Unknown setting: ' || SETTING_KEY;
   END IF;
-  IF (UPPER(SETTING_KEY) IN ('CREDIT_PRICE', 'DAILY_USER_CREDIT_LIMIT', 'CHAT_CREDIT_LIMIT')
+  IF (UPPER(SETTING_KEY) = 'CREDIT_PRICE'
       AND SETTING_VALUE IS NOT NULL AND TRY_TO_DOUBLE(SETTING_VALUE) IS NULL) THEN
     RETURN SETTING_KEY || ' must be a number.';
   END IF;
@@ -476,6 +495,7 @@ GRANT SELECT ON VIEW CHATS            TO ROLE COCO_TOKEN_METER_ADMIN;
 GRANT SELECT ON VIEW BACKGROUND_USAGE TO ROLE COCO_TOKEN_METER_ADMIN;
 GRANT SELECT ON VIEW DAILY_USAGE      TO ROLE COCO_TOKEN_METER_ADMIN;
 GRANT SELECT ON VIEW SAVINGS_ESTIMATE TO ROLE COCO_TOKEN_METER_ADMIN;
+GRANT SELECT ON VIEW ROLLING_24H_USAGE TO ROLE COCO_TOKEN_METER_ADMIN;
 
 GRANT USAGE ON PROCEDURE SYNC_MY_CHAT_TITLES()          TO ROLE COCO_TOKEN_METER_USER;
 GRANT USAGE ON PROCEDURE STORE_MY_CHAT_TITLES(VARIANT)   TO ROLE COCO_TOKEN_METER_USER;
