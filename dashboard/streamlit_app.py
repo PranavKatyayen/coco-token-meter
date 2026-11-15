@@ -9,10 +9,13 @@ import pandas as pd
 import streamlit as st
 from snowflake.snowpark.context import get_active_session
 
-SCHEMA = "COCO_TOKEN_METER.USAGE"
-
 st.set_page_config(page_title="CoCo Token Meter", layout="wide")
 session = get_active_session()
+
+# The views live in the USAGE schema of the database this dashboard is in:
+# COCO_TOKEN_METER for the SQL install, the application itself for the native app.
+_database = (session.get_current_database() or "COCO_TOKEN_METER").strip('"')
+SCHEMA = f'"{_database}".USAGE'
 
 
 @st.cache_data(ttl=300, show_spinner="Reading CoCo usage...")

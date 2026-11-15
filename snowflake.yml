@@ -1,0 +1,22 @@
+# Native app build of coco-token-meter, for the Snowflake CLI:
+#   snow app run -c <connection>
+definition_version: 2
+entities:
+  coco_token_meter_pkg:
+    type: application package
+    identifier: COCO_TOKEN_METER_PKG
+    manifest: native-app/manifest.yml
+    artifacts:
+      - src: native-app/manifest.yml
+        dest: manifest.yml
+      - src: native-app/setup.sql
+        dest: setup.sql
+      - src: native-app/README.md
+        dest: README.md
+      - src: dashboard/streamlit_app.py
+        dest: streamlit/streamlit_app.py
+  coco_token_meter_app:
+    type: application
+    identifier: COCO_TOKEN_METER_APP
+    from:
+      target: coco_token_meter_pkg

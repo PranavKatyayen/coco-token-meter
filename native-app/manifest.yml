@@ -1,0 +1,10 @@
+manifest_version: 1
+
+artifacts:
+  setup_script: setup.sql
+  readme: README.md
+  default_streamlit: USAGE.DASHBOARD
+
+privileges:
+  - IMPORTED PRIVILEGES ON SNOWFLAKE DB:
+      description: "Read CoCo usage history from SNOWFLAKE.ACCOUNT_USAGE"

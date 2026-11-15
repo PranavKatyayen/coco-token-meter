@@ -174,7 +174,22 @@ only the tips the numbers support, most valuable first:
   chats are long and take many steps.
 - `OUTPUT_CREDITS`: the answers themselves. Usually a small share; shorter
   answers save little.
-- Do not promise a saving figure. State the shares and let the user decide.
+Then show the savings estimate for the same 30 days:
+
+```sql
+SELECT CHATS, CREDITS, COLD_STARTS, QUICK_RESTARTS, QUICK_RESTART_SAVING,
+       IDLE_RELOADS, IDLE_RELOAD_SAVING, SLIM_SAVING_LOW, SLIM_SAVING_HIGH
+FROM COCO_TOKEN_METER.USAGE.MY_SAVINGS_ESTIMATE;
+```
+
+- `QUICK_RESTART_SAVING`: credits that `QUICK_RESTARTS` chats would have
+  saved had they been follow-ups, because each was started within 5 minutes
+  of the user's previous chat.
+- `IDLE_RELOAD_SAVING`: credits spent re-loading chats after a pause.
+- `SLIM_SAVING_LOW` to `SLIM_SAVING_HIGH`: what `/slim` could have saved in
+  CoCo CLI, with 20 or all bundled skills turned off.
+- Say that these are estimates and upper bounds, that they overlap and must
+  not be added together, and do not promise a saving.
 ## Presenting the result
 
 - Show a table. Format token counts with thousands separators.
@@ -187,6 +202,11 @@ only the tips the numbers support, most valuable first:
   Mention this if the user is surprised by the size of the numbers.
 
 ## If the views are missing
+
+If `COCO_TOKEN_METER` does not exist, the account may use the native app
+instead. Run the same queries against `COCO_TOKEN_METER_APP.USAGE` (skip
+`SYNC_MY_CHAT_TITLES`, which the app does not have). Only if that fails too:
+
 
 If a query fails because `COCO_TOKEN_METER` does not exist or is not
 authorized, do not try to create it. Tell the user that an administrator has
