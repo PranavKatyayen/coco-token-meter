@@ -347,9 +347,10 @@ CoCo sets for shell commands, in the CLI and in Snowsight.
 
 ## Limits
 
-- **Tested in one small account.** A few hundred requests from four users,
-  three of them temporary test users driving the CoCo CLI. Large accounts
-  have not been tested.
+- **Tested in two small accounts.** Built in one (a few hundred requests,
+  five users), then installed from scratch in a second by pasting
+  `install_in_snowsight.sql` into a worksheet. Large accounts have not been
+  tested.
 - **A brand-new Snowflake user has no name at first.** Snowflake fills in the
   user name in its usage history a few minutes after the user's first
   request (about 10 minutes in our test; its user list can lag up to two

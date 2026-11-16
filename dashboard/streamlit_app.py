@@ -563,7 +563,7 @@ cards(
     [
         card("Credits", f"{total_credits:,.2f}", money(total_credits, price, currency) or "billed by Snowflake", CYAN),
         card("Chats", f"{chat_count:,}", f"{data['USER_NAME'].nunique():,} users", VIOLET),
-        card("Requests", f"{len(data):,}", f"{len(data) / chat_count:.1f} per chat" if chat_count else "", BLUE),
+        card("Requests", f"{len(data):,}", f"{len(in_chats) / chat_count:.1f} per chat" if chat_count else "", BLUE),
         card("Credits per chat", f"{per_chat:,.3f}", "average", GREEN),
         card("Cold starts", f"{cold_share:.0f}", "share of all credits", PINK, bar=cold_share, unit="%"),
     ]
