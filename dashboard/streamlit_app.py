@@ -349,6 +349,11 @@ def esc(value) -> str:
 ACCENT_CLASS = {CYAN: "acc-cyan", VIOLET: "acc-violet", PINK: "acc-pink", AMBER: "acc-amber", GREEN: "acc-green", BLUE: "acc-blue"}
 
 
+def plain(value) -> str:
+    """Text for chart labels: Plotly reads a few HTML tags, so remove angle brackets."""
+    return str(value).replace("<", "(").replace(">", ")")
+
+
 def card(label: str, value: str, note: str = "", accent: str = CYAN, bar=None, unit: str = "") -> str:
     bar_html = ""
     if bar is not None:
@@ -708,7 +713,7 @@ if view == "Chats":
     else:
         top = chats.head(15).iloc[::-1]
         labels = [
-            (row["Chat name"] or f"thread {row['Thread']}")[:52] + f"  ·  {row['User']}" for _, row in top.iterrows()
+            plain((row["Chat name"] or f"thread {row['Thread']}")[:52] + f"  ·  {row['User']}") for _, row in top.iterrows()
         ]
         fig = go.Figure(
             go.Bar(
@@ -762,7 +767,8 @@ if view == "Users":
         user_names = list(per_user["User"])
         fig = go.Figure(
             go.Treemap(
-                labels=user_names + [(n or f"thread {t}")[:40] for n, t in zip(tree["Chat name"], tree["Thread"])],
+                labels=[plain(u) for u in user_names]
+                + [plain((n or f"thread {t}")[:40]) for n, t in zip(tree["Chat name"], tree["Thread"])],
                 ids=[f"u:{u}" for u in user_names] + [f"c:{t}" for t in tree["Thread"]],
                 parents=[""] * len(user_names) + [f"u:{u}" for u in tree["User"]],
                 values=[0] * len(user_names) + list(tree["Credits"]),

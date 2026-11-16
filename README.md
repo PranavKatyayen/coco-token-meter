@@ -3,6 +3,8 @@
 See what every Snowflake CoCo (Cortex Code) chat cost, in tokens, credits and
 money, per chat and per user, and find out where the credits go.
 
+![The same question in two Snowflake accounts: without the meter CoCo cannot answer, with it CoCo shows every request and its credits](images/before-after.png)
+
 ## Before and after
 
 Ask CoCo in Snowsight: **"token usage for this chat"**.
@@ -91,20 +93,6 @@ Then install the skills for yourself, in any Snowsight worksheet:
 CALL COCO_TOKEN_METER.USAGE.INSTALL_MY_SKILLS(TRUE);
 ```
 
-### After installing: give people access
-
-| Role | Sees |
-|---|---|
-| `COCO_TOKEN_METER_USER` | only the chats of the user running the query |
-| `COCO_TOKEN_METER_ADMIN` | every user's chats, settings and the dashboard |
-
-To let everyone see their own usage:
-
-```sql
-GRANT ROLE COCO_TOKEN_METER_USER TO ROLE PUBLIC;
-```
-
-Users need no access to `SNOWFLAKE.ACCOUNT_USAGE`. They do need a warehouse.
 ### C. Native app (optional)
 
 The same views and dashboard packaged as a Snowflake Native App, with the CLI:
@@ -124,6 +112,21 @@ CALL COCO_TOKEN_METER_APP.USAGE.ACTIVATE();
 Then grant `COCO_TOKEN_METER_APP.APP_ADMIN` or `APP_USER` to your roles. The
 app does not include chat names yet, and the skills look for
 the SQL install first (see Limits).
+
+### After installing: give people access
+
+| Role | Sees |
+|---|---|
+| `COCO_TOKEN_METER_USER` | only the chats of the user running the query |
+| `COCO_TOKEN_METER_ADMIN` | every user's chats, settings and the dashboard |
+
+To let everyone see their own usage:
+
+```sql
+GRANT ROLE COCO_TOKEN_METER_USER TO ROLE PUBLIC;
+```
+
+Users need no access to `SNOWFLAKE.ACCOUNT_USAGE`. They do need a warehouse.
 
 ### D. Skills for every other user
 
@@ -164,7 +167,7 @@ Restart CoCo or run `/plugin reload`.
 | `/tokens` | "show my CoCo token usage per chat" | your 20 most recent chats |
 | `/tokens this` | "token usage for this chat" | the open chat, request by request |
 | `/tokens last` | "usage of my previous chat" | the chat before this one |
-| `/tokens 93082240` | "usage for thread 93082240" | one chat, request by request |
+| `/tokens 12345678` | "usage for thread 12345678" | one chat, request by request |
 | `/tokens top` | "my most expensive chats" | your 10 most expensive chats |
 | `/tokens tips` | "where do my CoCo credits go?" | credit split and what to change |
 | `/tokens all` | "CoCo usage for all users" | all users (admin role) |
@@ -193,6 +196,8 @@ GROUP BY USER_NAME ORDER BY CREDITS DESC;
 "CoCo Token Meter" in Snowsight. It has an overview, the most expensive
 chats, usage per user, the savings estimate, and a request-by-request view of
 any chat. It shows every user's usage, so only the admin role can open it.
+
+![The dashboard overview](images/dashboard-overview.png)
 
 **Chat names.** Snowflake's usage history has thread ids but no chat titles.
 Each user adds the titles of their own chats with one call, which the skill
@@ -249,9 +254,9 @@ action at the limit, use Snowflake's per-user quotas and budgets.
 
 ## What we measured
 
-Measured on 2026-11-14 and 2026-11-15 in one Enterprise trial account (AWS
-Tokyo), with CoCo CLI 1.2.45 and the model CoCo picked by default
-(`claude-opus-5-5`). Your rates, model and numbers can differ. Ask
+Measured from 2026-11-14 to 2026-11-16 in two Snowflake trial accounts, with
+CoCo CLI 1.2.45 and the model CoCo picked by default (`claude-opus-5-5`).
+Unless a line says otherwise, the figures are from the first account. Your rates, model and numbers can differ. Ask
 "where do my CoCo credits go?" to see your own.
 
 **The views match Snowflake's totals.** Requests, tokens and credits equal
@@ -338,9 +343,9 @@ it off. It reads only local files the CLI writes and uses the rates in
 | `SKILLS_STAGE`, `INSTALL_MY_SKILLS` | skill files and the one-statement installer for users |
 
 Every usage view reads
-`SNOWFLAKE.ACCOUNT_USAGE.SNOWFLAKE_COCO_USAGE_HISTORY` once per query. On the
-test account (223 requests) each answered in 3 to 7 seconds on an X-Small
-warehouse. The `MY_*` views are secure views owned by the installing role.
+`SNOWFLAKE.ACCOUNT_USAGE.SNOWFLAKE_COCO_USAGE_HISTORY` once per query. With a
+few hundred requests in the account, each answered in 3 to 7 seconds on an
+X-Small warehouse. The `MY_*` views are secure views owned by the installing role.
 
 "This chat" is found from the `CORTEX_THREAD_ID` environment variable that
 CoCo sets for shell commands, in the CLI and in Snowsight.
@@ -358,12 +363,12 @@ CoCo sets for shell commands, in the CLI and in Snowsight.
   views are empty.
 - **Tested on Windows only**, with CoCo CLI 1.2.45. macOS and Linux have not
   been tried, and the previous-chat line is a PowerShell script.
-- **The dashboard's current design has not been reviewed in a browser.** Its
-  code was run inside Snowflake against real data and every section produced
-  output. It pins Streamlit 1.44.1 and Plotly 5.24.1 in `dashboard/environment.yml`.
+- **The dashboard pins its packages**: Streamlit 1.44.1 and Plotly 5.24.1, in
+  `dashboard/environment.yml`. It was checked in a browser in both accounts.
+  Its first load after an install is slow while Snowflake fetches them.
 - **Limits were tested at 0 and by setting and unsetting.** A user set to 0
-  was blocked in the CLI with Snowflake's own message. A positive limit being
-  reached was not tested. Limits must be whole numbers.
+  was blocked, in the CLI and in Snowsight, with Snowflake's own message. A
+  positive limit being reached was not tested. Limits must be whole numbers.
 - **Slash commands were tested through their skills.** The CLI was run
   headless, where plugin commands are not expanded and the skills answer.
 - **"This chat" shows nothing on the first message of a chat**, because a
@@ -381,6 +386,18 @@ CoCo sets for shell commands, in the CLI and in Snowsight.
 - **Needs `SNOWFLAKE_COCO_USAGE_HISTORY`** in `SNOWFLAKE.ACCOUNT_USAGE`.
 
 ## Uninstall
+
+From a Snowsight worksheet, as the role that installed it (other users run
+the first line themselves, before the database is dropped):
+
+```sql
+CALL COCO_TOKEN_METER.USAGE.UNINSTALL_MY_SKILLS();
+DROP DATABASE IF EXISTS COCO_TOKEN_METER;
+DROP ROLE IF EXISTS COCO_TOKEN_METER_ADMIN;
+DROP ROLE IF EXISTS COCO_TOKEN_METER_USER;
+```
+
+Or with the command line:
 
 ```bash
 cortex plugin uninstall coco-token-meter
