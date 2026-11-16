@@ -5,6 +5,15 @@ money, per chat and per user, and find out where the credits go.
 
 ![The same question in two Snowflake accounts: without the meter CoCo cannot answer, with it CoCo shows every request and its credits](images/before-after.png)
 
+## Demo
+
+A narrated three-minute walkthrough: install it from one worksheet, ask CoCo,
+and open the dashboard.
+
+[![Watch the 3-minute demo](images/demo-thumbnail.png)](https://github.com/PranavKatyayen/coco-token-meter/blob/main/media/coco-token-meter-demo.mp4)
+
+Subtitles are in [`media/coco-token-meter-demo.srt`](media/coco-token-meter-demo.srt).
+
 ## Before and after
 
 Ask CoCo in Snowsight: **"token usage for this chat"**.
