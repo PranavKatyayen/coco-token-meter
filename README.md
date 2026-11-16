@@ -10,9 +10,10 @@ money, per chat and per user, and find out where the credits go.
 A narrated three-minute walkthrough: install it from one worksheet, ask CoCo,
 and open the dashboard.
 
-[![Watch the 3-minute demo](images/demo-thumbnail.png)](https://github.com/PranavKatyayen/coco-token-meter/blob/main/media/coco-token-meter-demo.mp4)
+[![Download the 3-minute demo](images/demo-thumbnail.png)](https://github.com/PranavKatyayen/coco-token-meter/raw/main/media/coco-token-meter-demo.mp4)
 
-Subtitles are in [`media/coco-token-meter-demo.srt`](media/coco-token-meter-demo.srt).
+Clicking the image downloads the video (6 MB, MP4). Subtitles are in
+[`media/coco-token-meter-demo.srt`](media/coco-token-meter-demo.srt).
 
 ## Before and after
 
