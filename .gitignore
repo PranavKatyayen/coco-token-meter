@@ -1,2 +1,7 @@
 output/
 
+# Article drafts: only scripts and images go to GitHub
+medium.md
+medium.html
+linkedin.md
+linkedin-ready.txt
