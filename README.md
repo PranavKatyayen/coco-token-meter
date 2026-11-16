@@ -51,30 +51,47 @@ Snowflake's usage history plus a few skills. Nothing leaves your account.
 
 ## Install
 
-Pick one of A or B for the data, then add the CoCo skills (C, D).
+There are two ways to install. Both create the same thing: the database
+`COCO_TOKEN_METER` with the usage views, the admin dashboard and the CoCo
+skills. Either is done once per account, by a role that can read
+`SNOWFLAKE.ACCOUNT_USAGE` and create a database and roles (`ACCOUNTADMIN` is
+the simple choice).
+
+### A. From Snowsight (no CLI, nothing to download)
+
+1. Open [`install_in_snowsight.sql`](install_in_snowsight.sql) on GitHub and
+   copy the whole file (the "Copy raw file" button at the top right of the
+   file view).
+2. In Snowsight, open Projects > Workspaces > **+ Add new** > **SQL File** and
+   paste it in.
+3. At the top of the worksheet choose the role `ACCOUNTADMIN` and a warehouse.
+4. Run all of it (the arrow next to Run > **Run All**). It takes a few
+   minutes.
+
+The last result says `coco-token-meter is installed` and how many chats it
+found. The file also creates the dashboard on the warehouse you chose and
+installs the skills for you. Run it again at any time to update.
+
+### B. With the Snowflake CLI
 
 You need the [Snowflake CLI](https://docs.snowflake.com/en/developer-guide/snowflake-cli/index)
-(`snow`) and a clone of this repository:
-
-```bash
-git clone https://github.com/PranavKatyayen/coco-token-meter.git
-```
-
-```bash
-cd coco-token-meter
-```
-
-### A. SQL install (recommended)
-
-One script, run once per account from the repository root, by a role that can
-read `SNOWFLAKE.ACCOUNT_USAGE` and create a database and roles (`ACCOUNTADMIN`
-is the simple choice):
+(`snow`) and a copy of this repository. Run these from the repository root:
 
 ```bash
 snow sql -c <connection> -f sql/setup.sql
 ```
 
-It creates the database `COCO_TOKEN_METER` and two roles:
+```bash
+snow sql -c <connection> -f sql/dashboard.sql -D "warehouse=<warehouse>"
+```
+
+Then install the skills for yourself, in any Snowsight worksheet:
+
+```sql
+CALL COCO_TOKEN_METER.USAGE.INSTALL_MY_SKILLS(TRUE);
+```
+
+### After installing: give people access
 
 | Role | Sees |
 |---|---|
@@ -88,16 +105,9 @@ GRANT ROLE COCO_TOKEN_METER_USER TO ROLE PUBLIC;
 ```
 
 Users need no access to `SNOWFLAKE.ACCOUNT_USAGE`. They do need a warehouse.
+### C. Native app (optional)
 
-The admin dashboard is one more command:
-
-```bash
-snow sql -c <connection> -f sql/dashboard.sql -D "warehouse=<warehouse>"
-```
-
-### B. Native app install
-
-The same views and dashboard packaged as a Snowflake Native App:
+The same views and dashboard packaged as a Snowflake Native App, with the CLI:
 
 ```bash
 snow app run -c <connection>
@@ -115,11 +125,11 @@ Then grant `COCO_TOKEN_METER_APP.APP_ADMIN` or `APP_USER` to your roles. The
 app does not include chat names yet, and the skills look for
 the SQL install first (see Limits).
 
-### C. Skills for CoCo in Snowsight
+### D. Skills for every other user
 
 CoCo in Snowsight loads skills from each user's own workspace, which only
-that user can write to. After the SQL install, every user runs one statement
-in any Snowsight worksheet, once:
+that user can write to. The installer does this for the person who runs it.
+Every other user runs one statement in any Snowsight worksheet, once:
 
 ```sql
 CALL COCO_TOKEN_METER.USAGE.INSTALL_MY_SKILLS();
@@ -137,7 +147,7 @@ also installs the experimental lean-mode skill:
 snow sql -c <connection> -f sql/install_snowsight_skills.sql
 ```
 
-### D. Plugin for CoCo CLI
+### E. Plugin for CoCo CLI
 
 ```bash
 cortex plugin install PranavKatyayen/coco-token-meter
@@ -179,7 +189,7 @@ FROM COCO_TOKEN_METER.USAGE.CHATS
 GROUP BY USER_NAME ORDER BY CREDITS DESC;
 ```
 
-**Dashboard.** After `sql/dashboard.sql`, open Projects > Streamlit >
+**Dashboard.** Open Projects > Streamlit >
 "CoCo Token Meter" in Snowsight. It has an overview, the most expensive
 chats, usage per user, the savings estimate, and a request-by-request view of
 any chat. It shows every user's usage, so only the admin role can open it.
@@ -324,7 +334,8 @@ it off. It reads only local files the CLI writes and uses the rates in
 | `MY_CHATS`, `MY_CHAT_REQUESTS`, `MY_DAILY_USAGE`, `MY_BACKGROUND_USAGE`, `MY_SAVINGS_ESTIMATE` | the same, limited to `CURRENT_USER()` |
 | `SETTINGS`, `CHAT_TITLES` | small tables behind `SET_SETTING` and `SYNC_MY_CHAT_TITLES` |
 | `ROLLING_24H_USAGE` | credits per user and surface over the past 24 hours |
-| `COCO_TOKEN_METER_DASHBOARD` | the admin dashboard, from `sql/dashboard.sql` |
+| `COCO_TOKEN_METER_DASHBOARD` | the admin dashboard |
+| `SKILLS_STAGE`, `INSTALL_MY_SKILLS` | skill files and the one-statement installer for users |
 
 Every usage view reads
 `SNOWFLAKE.ACCOUNT_USAGE.SNOWFLAKE_COCO_USAGE_HISTORY` once per query. On the
